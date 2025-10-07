@@ -95,6 +95,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             background: radial-gradient(circle at var(--glow-x, 0%) var(--glow-y, 0%), rgba(59, 130, 246, 0.18), transparent 55%);
             opacity: 0;
             transition: opacity 0.4s ease;
+            pointer-events: none;
         }
         .card:hover {
             transform: translateY(-3px);
