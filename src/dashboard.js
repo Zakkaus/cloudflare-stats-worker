@@ -1266,23 +1266,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         renderTopPages([]);
                     }
                 } catch (error) {
-                    function enableCardHoverGlow() {
-                        const cards = document.querySelectorAll(".card");
-                        cards.forEach(function (card) {
-                            card.addEventListener("pointermove", function (event) {
-                                const rect = card.getBoundingClientRect();
-                                const x = ((event.clientX - rect.left) / rect.width) * 100;
-                                const y = ((event.clientY - rect.top) / rect.height) * 100;
-                                card.style.setProperty("--glow-x", x + "%");
-                                card.style.setProperty("--glow-y", y + "%");
-                            });
-                            card.addEventListener("pointerleave", function () {
-                                card.style.removeProperty("--glow-x");
-                                card.style.removeProperty("--glow-y");
-                            });
-                        });
-                    }
-
                     console.warn("[dashboard] top pages error", error);
                     if (elements.topLoading) {
                         elements.topLoading.style.display = "none";
@@ -1293,6 +1276,23 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     }
                     renderTopPages([]);
                 }
+            }
+
+            function enableCardHoverGlow() {
+                const cards = document.querySelectorAll(".card");
+                cards.forEach(function (card) {
+                    card.addEventListener("pointermove", function (event) {
+                        const rect = card.getBoundingClientRect();
+                        const x = ((event.clientX - rect.left) / rect.width) * 100;
+                        const y = ((event.clientY - rect.top) / rect.height) * 100;
+                        card.style.setProperty("--glow-x", x + "%");
+                        card.style.setProperty("--glow-y", y + "%");
+                    });
+                    card.addEventListener("pointerleave", function () {
+                        card.style.removeProperty("--glow-x");
+                        card.style.removeProperty("--glow-y");
+                    });
+                });
             }
 
             function wireEvents() {
