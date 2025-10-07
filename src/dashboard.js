@@ -52,36 +52,101 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             min-height: 100vh;
             display: flex;
             justify-content: center;
-            padding: 32px 18px 48px;
+            padding: 36px 18px 60px;
+            position: relative;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            background: radial-gradient(160% 120% at 20% 10%, rgba(59, 130, 246, 0.16), transparent 60%),
+                        radial-gradient(120% 120% at 80% 0%, rgba(129, 140, 248, 0.18), transparent 65%),
+                        radial-gradient(100% 140% at 50% 100%, rgba(16, 185, 129, 0.12), transparent 70%);
+            opacity: 0;
+            animation: fade-in 1s ease forwards 0.15s;
         }
         .page {
             width: min(1120px, 100%);
             display: flex;
             flex-direction: column;
-            gap: 28px;
+            gap: 32px;
+            animation: float-up 0.6s ease forwards;
         }
         .card {
+            --glow-x: 50%;
+            --glow-y: 50%;
             background: var(--card-bg);
             border: 1px solid var(--card-border);
             border-radius: var(--radius);
             backdrop-filter: blur(18px);
             box-shadow: var(--shadow);
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.25s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+            animation: fade-up 0.45s ease both;
         }
+        .card::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at var(--glow-x, 0%) var(--glow-y, 0%), rgba(59, 130, 246, 0.18), transparent 55%);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 26px 50px -28px rgba(15, 23, 42, 0.55);
+        }
+        .card:hover::after {
+            opacity: 1;
+        }
+        [data-animate] {
+            animation-delay: calc(var(--delay, 0) * 60ms);
+        }
+        [data-animate="1"] { --delay: 1; }
+        [data-animate="2"] { --delay: 2; }
+        [data-animate="3"] { --delay: 3; }
+        [data-animate="4"] { --delay: 4; }
+        [data-animate="5"] { --delay: 5; }
+    [data-animate="6"] { --delay: 6; }
+    [data-animate="7"] { --delay: 7; }
+    [data-animate="8"] { --delay: 8; }
+    [data-animate="9"] { --delay: 9; }
         header.page__header {
             display: flex;
             flex-direction: column;
-            gap: 24px;
+            gap: 30px;
         }
         .hero {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 24px;
+            gap: 32px;
+            padding: 28px;
+            position: relative;
+            overflow: hidden;
+            isolation: isolate;
+        }
+        .hero::before {
+            content: "";
+            position: absolute;
+            inset: -25% -10% auto -10%;
+            height: 220px;
+            background: radial-gradient(120% 120% at 10% 30%, rgba(59, 130, 246, 0.45), rgba(15, 23, 42, 0));
+            opacity: 0.65;
+            transform: translate3d(0, 20px, 0);
+            filter: blur(20px);
+            z-index: -1;
+            animation: aurora 8s ease-in-out infinite alternate;
         }
         .hero__title {
             display: flex;
             align-items: center;
             gap: 16px;
+            flex: 1;
         }
         .hero__title img {
             width: 64px;
@@ -100,18 +165,20 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             margin: 4px 0 0;
             color: var(--muted);
             font-size: 1rem;
+            max-width: 32ch;
         }
         .hero__actions {
             display: flex;
             gap: 12px;
             flex-wrap: wrap;
+            align-items: center;
         }
         .pill-button {
             border: 1px solid var(--card-border);
             background: var(--card-bg);
             color: var(--headline);
             border-radius: 999px;
-            padding: 8px 16px;
+            padding: 10px 18px;
             display: inline-flex;
             align-items: center;
             gap: 8px;
@@ -120,6 +187,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             cursor: pointer;
             text-decoration: none;
             transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+            box-shadow: 0 10px 25px -18px rgba(15, 23, 42, 0.6);
         }
         .pill-button:link,
         .pill-button:visited {
@@ -134,6 +202,10 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             border-color: var(--accent);
             transform: translateY(-1px);
         }
+        .pill-button:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
         main.page__main {
             display: flex;
             flex-direction: column;
@@ -147,7 +219,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         }
         .stat-card {
-            padding: 24px;
+            padding: 26px;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -170,6 +242,10 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         .stat-card.today {
             border: 1px solid var(--accent);
             background: var(--accent-soft);
+        }
+        .stat-card.today.visitors {
+            border-color: rgba(16, 185, 129, 0.65);
+            background: rgba(16, 185, 129, 0.15);
         }
         .status-card {
             padding: 24px;
@@ -382,13 +458,38 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         footer.page__footer a:hover {
             text-decoration: underline;
         }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
         @media (max-width: 720px) {
-            body { padding: 24px 14px 32px; }
-            .hero { flex-direction: column; align-items: flex-start; }
+            body { padding: 24px 14px 38px; }
+            .hero { flex-direction: column; align-items: flex-start; padding: 24px; }
             .hero__actions { width: 100%; justify-content: stretch; }
-            .hero__actions button { flex: 1 1 auto; justify-content: center; }
+            .hero__actions .pill-button { flex: 1 1 auto; justify-content: center; }
             .page-item { grid-template-columns: 1fr; }
             .page-views { justify-self: flex-start; }
+        }
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes fade-up {
+            from { opacity: 0; transform: translateY(18px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes float-up {
+            from { opacity: 0; transform: translateY(24px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes aurora {
+            0% { transform: translate3d(-10px, 18px, 0) scale(1); opacity: 0.6; }
+            50% { transform: translate3d(10px, 8px, 0) scale(1.08); opacity: 0.72; }
+            100% { transform: translate3d(0, 24px, 0) scale(1); opacity: 0.6; }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
@@ -396,7 +497,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 <body>
     <div class="page">
         <header class="page__header">
-            <div class="card hero">
+            <div class="card hero" data-animate="0">
                 <div class="hero__title">
                     <img id="logo-img" src="/logo.webp" alt="Cloudflare Stats logo" width="64" height="64" loading="lazy">
                     <div>
@@ -420,26 +521,31 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 </div>
             </div>
             <div class="grid stats-grid">
-                <article class="card stat-card">
+                <article class="card stat-card" data-animate="1">
                     <h2 data-i18n="totalPageViews">全站總瀏覽量</h2>
                     <div id="site-pv" class="value">—</div>
                     <div class="note">—</div>
                 </article>
-                <article class="card stat-card">
+                <article class="card stat-card" data-animate="2">
                     <h2 data-i18n="totalUniqueVisitors">全站訪客數</h2>
                     <div id="site-uv" class="value">—</div>
                     <div class="note">—</div>
                 </article>
-                <article class="card stat-card today">
+                <article class="card stat-card today" data-card="today-pv" data-animate="3">
                     <h2 data-i18n="todayPageViews">今日瀏覽量</h2>
                     <div id="today-pv" class="value">—</div>
+                    <div class="note" data-i18n="loading">載入中...</div>
+                </article>
+                <article class="card stat-card today visitors" data-card="today-uv" data-animate="4">
+                    <h2 data-i18n="todayUniqueVisitors">今日訪客數</h2>
+                    <div id="today-uv" class="value">—</div>
                     <div class="note" data-i18n="loading">載入中...</div>
                 </article>
             </div>
         </header>
 
         <main class="page__main">
-            <section class="card status-card">
+            <section class="card status-card" data-animate="5">
                 <h3 data-i18n="apiStatus">API 狀態</h3>
                 <div class="status-row">
                     <span class="label" data-i18n="poweredBy">Powered by</span>
@@ -459,7 +565,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 </div>
             </section>
 
-            <section class="card chart-card">
+            <section class="card chart-card" data-animate="6">
                 <div class="chart-header">
                     <div>
                         <h3 data-i18n="dailyTrend">📈 每日訪問趨勢</h3>
@@ -476,7 +582,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 </div>
             </section>
 
-            <section class="card search-card">
+            <section class="card search-card" data-animate="7">
                 <h3 data-i18n="searchPage">🔍 查詢頁面統計</h3>
                 <form id="search-form" autocomplete="off">
                     <input id="path-input" type="text" name="path" placeholder="/posts/hello-world/" data-i18n-placeholder="searchPlaceholder">
@@ -492,7 +598,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 </div>
             </section>
 
-            <section class="card top-card">
+            <section class="card top-card" data-animate="8">
                 <div class="header">
                     <h3 data-i18n="topPages">🔥 熱門頁面 Top 10</h3>
                 </div>
@@ -523,6 +629,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     totalPageViews: "全站總瀏覽量",
                     totalUniqueVisitors: "全站訪客數",
                     todayPageViews: "今日瀏覽量",
+                    todayUniqueVisitors: "今日訪客數",
                     apiStatus: "API 當前狀態",
                     dailyTrend: "📈 每日訪問趨勢",
                     last7Days: "過去 7 天",
@@ -564,6 +671,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     totalPageViews: "Total Page Views",
                     totalUniqueVisitors: "Total Unique Visitors",
                     todayPageViews: "Today's Views",
+                    todayUniqueVisitors: "Today's Unique Visitors",
                     apiStatus: "API Status",
                     dailyTrend: "📈 Daily Traffic Trend",
                     last7Days: "Last 7 Days",
@@ -604,7 +712,9 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 siteUv: document.getElementById("site-uv"),
                 siteNotes: Array.from(document.querySelectorAll(".stat-card:not(.today) .note")),
                 todayPv: document.getElementById("today-pv"),
-                todayNote: document.querySelector(".stat-card.today .note"),
+                todayPvNote: document.querySelector('.stat-card.today[data-card="today-pv"] .note'),
+                todayUv: document.getElementById("today-uv"),
+                todayUvNote: document.querySelector('.stat-card.today[data-card="today-uv"] .note'),
                 apiStatus: document.getElementById("api-status"),
                 apiVersion: document.getElementById("api-version"),
                 chartUpdated: document.getElementById("daily-updated"),
@@ -1055,8 +1165,11 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 state.currentDays = targetDays;
                 state.dailyStatus = "loading";
                 renderDailyStatus();
-                if (elements.todayNote) {
-                    elements.todayNote.textContent = t("loading");
+                if (elements.todayPvNote) {
+                    elements.todayPvNote.textContent = t("loading");
+                }
+                if (elements.todayUvNote) {
+                    elements.todayUvNote.textContent = t("loading");
                 }
                 if (elements.chartError) {
                     elements.chartError.style.display = "none";
@@ -1074,12 +1187,18 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     const hasResults = Array.isArray(data.results) && data.results.length > 0;
                     const series = hasResults ? data.results : buildFallbackSeries(targetDays);
                     updateDailyChart(series);
-                    const todayData = series.length > 0 ? series[series.length - 1] : { pv: 0 };
+                    const todayData = series.length > 0 ? series[series.length - 1] : { pv: 0, uv: 0 };
                     if (elements.todayPv) {
                         elements.todayPv.textContent = formatNumber(todayData.pv);
                     }
-                    if (elements.todayNote) {
-                        elements.todayNote.textContent = t("today");
+                    if (elements.todayUv) {
+                        elements.todayUv.textContent = formatNumber(todayData.uv);
+                    }
+                    if (elements.todayPvNote) {
+                        elements.todayPvNote.textContent = t("today");
+                    }
+                    if (elements.todayUvNote) {
+                        elements.todayUvNote.textContent = t("today");
                     }
                     state.lastDailyTimestamp = data.timestamp || new Date().toISOString();
                     state.dailyStatus = "ok";
@@ -1094,8 +1213,14 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     if (elements.todayPv) {
                         elements.todayPv.textContent = formatNumber(0);
                     }
-                    if (elements.todayNote) {
-                        elements.todayNote.textContent = t("today");
+                    if (elements.todayUv) {
+                        elements.todayUv.textContent = formatNumber(0);
+                    }
+                    if (elements.todayPvNote) {
+                        elements.todayPvNote.textContent = t("today");
+                    }
+                    if (elements.todayUvNote) {
+                        elements.todayUvNote.textContent = t("today");
                     }
                     if (elements.chartError) {
                         elements.chartError.textContent = t("loadFailed");
@@ -1141,6 +1266,23 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         renderTopPages([]);
                     }
                 } catch (error) {
+                    function enableCardHoverGlow() {
+                        const cards = document.querySelectorAll(".card");
+                        cards.forEach(function (card) {
+                            card.addEventListener("pointermove", function (event) {
+                                const rect = card.getBoundingClientRect();
+                                const x = ((event.clientX - rect.left) / rect.width) * 100;
+                                const y = ((event.clientY - rect.top) / rect.height) * 100;
+                                card.style.setProperty("--glow-x", x + "%");
+                                card.style.setProperty("--glow-y", y + "%");
+                            });
+                            card.addEventListener("pointerleave", function () {
+                                card.style.removeProperty("--glow-x");
+                                card.style.removeProperty("--glow-y");
+                            });
+                        });
+                    }
+
                     console.warn("[dashboard] top pages error", error);
                     if (elements.topLoading) {
                         elements.topLoading.style.display = "none";
@@ -1248,6 +1390,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 updateThemeButton();
                 updateLangButton();
                 setupChart();
+                enableCardHoverGlow();
                 wireEvents();
                 loadLogo();
                 loadSiteStats();
