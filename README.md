@@ -1,212 +1,405 @@
 # Cloudflare Stats Worker
 
-自架 PV/UV 統計 API，基於 Cloudflare Workers + KV (+ 可選 D1)。  
-Privacy-friendly, 無 Cookie, 極低成本, 全球 Edge 加速。
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Zakkaus/cloudflare-stats-worker)
+
+🚀 **Lightweight, Privacy-First Page View Counter** - Built on Cloudflare Workers + KV
+
+Perfect alternative to Google Analytics for static sites (Hugo, Hexo, Jekyll, VuePress, etc.)
+
+[繁體中文文檔](README.zh-TW.md) | [English](#)
 
 ---
 
-## ✨ 核心功能
+## ✨ Features
 
-- `/api/count?url=/path/` → 遞增並回傳頁面 + 全站 PV/UV
-- `/api/batch?urls=/a,/b` → 批次查詢（最多 50 個）
-- `/api/stats?url=/path/` → 讀取單頁（不遞增）
-- `/api/stats` → 全站總覽
-- `/api/top?limit=10` → 熱門文章（需 D1）
-- `/health` → 健康檢查
-
-### 隱私與安全
-- SHA-256(IP+UA) 截取 16 hex → 24h TTL
-- 速率限制：每 IP 每 60s 最多 120 次
-- 多語路徑合併：`/zh-tw/posts/x/` → `/posts/x/`
-- CORS 開放，適合靜態網站前端呼叫
+- **🌍 Edge Computing**: 300+ global CDN locations, sub-50ms latency
+- **🔒 Privacy-Focused**: No cookies, IP hashing, 24h visitor anonymization
+- **💰 Nearly Free**: 100K requests/day on free tier
+- **📊 Real-time**: Live PV/UV updates, batch query support
+- **🛡️ Anti-abuse**: Built-in rate limiting (120 req/60sec per IP)
+- **🌐 i18n Ready**: Auto-merge paths like `/zh-tw/posts/` → `/posts/`
 
 ---
 
-## 🚀 快速部署
+## 📦 Quick Start
 
-### 1. 建立 KV 命名空間
-```bash
-wrangler kv:namespace create PAGE_STATS
-wrangler kv:namespace create PAGE_STATS --preview
-```
-將輸出的 `id` 與 `preview_id` 填入 `wrangler.toml`。
+### One-Click Deploy
 
-### 2. （可選）建立 D1 資料庫
-若需熱門排行：
 ```bash
-wrangler d1 create cloudflare-stats-top
-```
-取得 `database_id`，填入 `wrangler.toml` 並取消註解 `[[d1_databases]]` 區塊。
-
-套用 schema：
-```bash
-wrangler d1 execute cloudflare-stats-top --file=schema.sql
+git clone https://github.com/Zakkaus/cloudflare-stats-worker.git
+cd cloudflare-stats-worker
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
 ```
 
-### 3. 部署
+Script will handle:
+1. Wrangler installation check
+2. Cloudflare login
+3. KV namespace creation
+4. `wrangler.toml` configuration
+5. Worker deployment
+6. Display deployment URL
+
+### Manual Deploy
+
+<details>
+<summary>Click to expand manual steps</summary>
+
+#### 1. Install Wrangler CLI
+```bash
+npm install -g wrangler
+wrangler login
+```
+
+#### 2. Create KV Namespace
+```bash
+wrangler kv namespace create PAGE_STATS
+wrangler kv namespace create PAGE_STATS --preview
+```
+
+Copy the IDs to `wrangler.toml`:
+```toml
+[[kv_namespaces]]
+binding = "PAGE_STATS"
+id = "abc123..."           # from output above
+preview_id = "xyz789..."   # from output above
+```
+
+#### 3. Deploy
 ```bash
 wrangler deploy
 ```
 
-### 4. 綁定自訂網域
-在 Cloudflare Dashboard: Workers → Triggers → Custom Domains → 綁定 `stats.yourdomain.com`
+#### 4. (Optional) Enable D1 for Top Posts
+```bash
+wrangler d1 create cloudflare-stats-top
+wrangler d1 execute cloudflare-stats-top --file=schema.sql
+```
+
+Edit `wrangler.toml` to uncomment `[[d1_databases]]` block, then `wrangler deploy`.
+
+</details>
 
 ---
 
-## 📂 檔案結構
+## 🔌 API Reference
 
+### Base URL
 ```
-cloudflare-stats-worker/
-├─ src/
-│  └─ index.js       # Worker 主程式
-├─ schema.sql        # D1 schema (可選)
-├─ wrangler.toml     # Wrangler 設定
-├─ scripts/
-│  ├─ verify.sh      # 健康檢查腳本
-│  └─ warmup-top.sh  # 預熱熱門排行
-└─ README.md
+https://cloudflare-stats-worker.your-subdomain.workers.dev
+# or use custom domain: https://stats.yourdomain.com
 ```
 
----
+### Endpoints
 
-## 🔌 API 說明
+| Endpoint | Method | Description | Increments Count |
+|----------|--------|-------------|------------------|
+| `/api/count?url={path}` | GET | Increment & return page+site stats | ✅ |
+| `/api/batch?urls={path1},{path2}...` | GET | Batch query (max 50 paths) | ❌ |
+| `/api/stats?url={path}` | GET | Get single page stats (read-only) | ❌ |
+| `/api/stats` | GET | Get site-wide total stats | ❌ |
+| `/api/top?limit={n}` | GET | Top N pages by views (D1 required) | ❌ |
+| `/health` | GET | Health check | ❌ |
 
-### GET /api/count?url=/posts/example/
-**遞增並回傳**
+### Example Responses
+
+<details>
+<summary><code>GET /api/count?url=/posts/hello-world/</code></summary>
+
 ```json
 {
   "success": true,
-  "page": { "path": "/posts/example/", "pv": 42, "uv": 15 },
-  "site": { "pv": 12345, "uv": 678 },
+  "page": {
+    "path": "/posts/hello-world/",
+    "pv": 42,
+    "uv": 15
+  },
+  "site": {
+    "pv": 12345,
+    "uv": 678
+  },
   "timestamp": "2025-10-07T12:34:56.789Z"
 }
 ```
+</details>
 
-### GET /api/batch?urls=/posts/a/,/posts/b/
-**批次查詢（不遞增）**
+<details>
+<summary><code>GET /api/batch?urls=/,/about/,/posts/example/</code></summary>
+
 ```json
 {
   "success": true,
-  "count": 2,
+  "count": 3,
   "results": {
-    "/posts/a/": { "normalizedPath": "/posts/a/", "pv": 10, "uv": 5 },
-    "/posts/b/": { "normalizedPath": "/posts/b/", "pv": 8, "uv": 4 }
+    "/": { "normalizedPath": "/", "pv": 1000, "uv": 500 },
+    "/about/": { "normalizedPath": "/about/", "pv": 200, "uv": 150 },
+    "/posts/example/": { "normalizedPath": "/posts/example/", "pv": 80, "uv": 60 }
+  },
+  "timestamp": "2025-10-07T12:34:56.789Z"
+}
+```
+</details>
+
+<details>
+<summary><code>GET /api/top?limit=5</code> (D1 required)</summary>
+
+```json
+{
+  "success": true,
+  "top": [
+    { "path": "/posts/popular-post/", "pv": 9876, "uv": 543 },
+    { "path": "/posts/trending/", "pv": 5432, "uv": 321 }
+  ],
+  "timestamp": "2025-10-07T12:34:56.789Z"
+}
+```
+</details>
+
+---
+
+## 🎨 Frontend Integration
+
+### Hugo (Blowfish Theme)
+
+1. **Enable view counts** in `config/_default/params.toml`:
+```toml
+[article]
+  showViews = true
+[list]
+  showViews = true
+```
+
+2. **Load script** in `layouts/partials/extend-head.html`:
+```html
+{{- $statsJs := resources.Get "js/cloudflare-stats.js" | minify | fingerprint -}}
+<script src="{{ $statsJs.RelPermalink }}" defer></script>
+```
+
+3. **Create** `assets/js/cloudflare-stats.js`:
+```javascript
+(function () {
+  const API_BASE = "https://stats.yourdomain.com"; // Your Worker URL
+
+  document.addEventListener("DOMContentLoaded", function() {
+    const nodes = document.querySelectorAll("span[id^='views_']");
+    
+    nodes.forEach(async (node) => {
+      const path = parsePathFromId(node.id);
+      try {
+        const res = await fetch(`${API_BASE}/api/count?url=${path}`);
+        const data = await res.json();
+        node.textContent = data.page?.pv || 0;
+        node.classList.remove("animate-pulse", "text-transparent");
+      } catch {
+        node.textContent = "—";
+      }
+    });
+  });
+
+  function parsePathFromId(id) {
+    return ("/" + id.replace(/^views_|\.md$/gi, "").replace(/\/index$/i, "/")).replace(/\/+/g, "/");
   }
-}
+})();
 ```
 
-### GET /api/stats?url=/posts/example/
-**讀取單頁（不遞增）**
-```json
-{
-  "success": true,
-  "page": { "path": "/posts/example/", "pv": 42, "uv": 15 }
-}
-```
+### Generic Static Sites
 
-### GET /api/stats
-**全站總覽**
-```json
-{
-  "success": true,
-  "site": { "pv": 12345, "uv": 678 }
-}
-```
+Add to your page template:
+```html
+<span id="page-views">Loading...</span>
 
-### GET /api/top?limit=10&min_pv=5
-**熱門排行（需 D1）**
-```json
-{
-  "success": true,
-  "count": 10,
-  "results": [
-    { "path": "/posts/popular/", "pv": 999, "uv": 88, "updated_at": "..." },
-    ...
-  ]
-}
+<script>
+  fetch('https://stats.yourdomain.com/api/count?url=' + location.pathname)
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('page-views').textContent = d.page.pv + ' views';
+    });
+</script>
 ```
 
 ---
 
-## 🧪 驗證
+## 💰 Cost Breakdown
 
-使用內建腳本：
+### Free Tier (Cloudflare Workers)
+- **100,000 requests/day**
+- **10ms CPU time per request**
+- ✅ Perfect for personal blogs & small sites
+
+### Paid Tier ($5/month base)
+
+| Monthly Traffic | KV Reads | KV Writes | D1 Reads | **Total** |
+|----------------|----------|-----------|----------|-----------|
+| 3M requests | 3M | 100K | 100K | **~$5.60** |
+| 10M requests | 10M | 300K | 300K | **~$7.50** |
+| 30M requests | 30M | 1M | 1M | **~$12.00** |
+
+**Calculation**:
+- Workers: $5/month base + $0.50/million requests beyond 10M
+- KV: $0.50/million reads, $5/million writes
+- D1: $0.36/million reads (first 25M free)
+
+**vs Google Analytics**: Free but requires cookie consent banners + GDPR compliance headaches.
+
+---
+
+## 🔧 Advanced Configuration
+
+### Custom Domain
+
+1. Cloudflare Dashboard → Workers & Pages → Your Worker → Settings → Triggers
+2. **Custom Domains** → Add `stats.yourdomain.com`
+3. DNS records auto-configure ✅
+
+### Adjust Rate Limiting
+
+Edit `src/index.js`:
+```javascript
+const RATE_LIMIT_WINDOW = 60;  // 60 seconds
+const RATE_LIMIT_MAX = 120;    // 120 requests
+```
+
+### Enable D1 Top Posts
+
+Uncomment in `wrangler.toml`:
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "cloudflare-stats-top"
+database_id = "your-d1-database-id"
+```
+
+Run:
+```bash
+wrangler d1 execute cloudflare-stats-top --file=schema.sql
+wrangler deploy
+```
+
+---
+
+## 🛠️ Development
+
+### Local Testing
+```bash
+wrangler dev
+# Visit http://localhost:8787/health
+```
+
+### Health Check
 ```bash
 chmod +x scripts/verify.sh
 ./scripts/verify.sh https://stats.yourdomain.com
 ```
 
-手動測試：
+Output:
+```
+✅ Health check passed
+✅ Count API works (PV: 42)
+✅ Stats API works
+⚠️  Top API not available (D1 not configured)
+```
+
+### View Logs
 ```bash
-curl -s https://stats.yourdomain.com/health | jq
-curl -s 'https://stats.yourdomain.com/api/count?url=/test/' | jq
-curl -s 'https://stats.yourdomain.com/api/top?limit=5' | jq
+wrangler tail
 ```
 
 ---
 
-## 💰 成本估算
+## 📊 Monitoring
 
-| 流量 | 建議方案 | 理由 |
-|------|----------|------|
-| < 3K PV/日 | 純 KV | 免費額度充足 |
-| 3K–8K PV/日 | 純 KV | 超額成本低（約 $1–5/月）|
-| > 8K PV/日 | 加入 D1 | 寫入成本更低 |
-| 需要排行 | 必須 D1 | `/api/top` 依賴 |
+Access metrics in **Cloudflare Dashboard**:
+- Workers & Pages → Your Worker → **Metrics**
 
-詳細費率參考 [Cloudflare Pricing](https://developers.cloudflare.com/workers/platform/pricing/)。
+Track:
+- Request count
+- Error rate
+- CPU time usage
+- KV/D1 operations
 
----
-
-## 🔧 前端整合範例
-
-### 基本整合（單頁遞增）
-```html
-<span id="page-views">0</span>
-
-<script>
-(async function() {
-  const API = 'https://stats.yourdomain.com';
-  const path = window.location.pathname;
-  
-  try {
-    const res = await fetch(`${API}/api/count?url=${encodeURIComponent(path)}`);
-    const data = await res.json();
-    if (data.success && data.page) {
-      document.getElementById('page-views').textContent = data.page.pv;
-    }
-  } catch (err) {
-    console.warn('Stats failed:', err);
-  }
-})();
-</script>
-```
-
-### 列表頁批次查詢
-```javascript
-const paths = ['/posts/a/', '/posts/b/', '/posts/c/'];
-const res = await fetch(`${API}/api/batch?urls=${paths.join(',')}`);
-const data = await res.json();
-
-paths.forEach(path => {
-  const pv = data.results[path]?.pv || 0;
-  document.querySelector(`[data-path="${path}"]`).textContent = pv;
-});
-```
+Set up **Alerts**:
+- Error rate > 5%
+- CPU time > 10ms
+- Unusual traffic spikes
 
 ---
 
-## 📜 License
+## 🤝 Contributing
 
-MIT
+Contributions welcome!
+
+1. Fork this repo
+2. Create feature branch: `git checkout -b feature/amazing-feature`
+3. Commit: `git commit -m 'Add amazing feature'`
+4. Push: `git push origin feature/amazing-feature`
+5. Open PR
 
 ---
 
-## 🔗 相關專案
+## 📄 License
 
-- 主站整合範例：[Zakk Blog](https://github.com/Zakkaus/blog)
-- Hugo Blowfish 主題：https://blowfish.page/
+[MIT License](LICENSE)
 
 ---
 
-**Maintained by** [Zakk](https://zakk.au)
+## 🙋 FAQ
+
+<details>
+<summary><strong>Why Cloudflare Workers over self-hosted solutions?</strong></summary>
+
+- No server maintenance
+- Global edge caching (< 50ms latency worldwide)
+- Auto-scaling without config
+- Generous free tier
+- Better DDoS protection than most VPS setups
+</details>
+
+<details>
+<summary><strong>Is visitor data stored permanently?</strong></summary>
+
+No. Visitor IDs are SHA-256 hashed and expire after 24 hours. Only aggregated PV/UV counts persist.
+</details>
+
+<details>
+<summary><strong>Can I import existing analytics data?</strong></summary>
+
+Yes! Use `scripts/import.sh` (coming soon) or manually populate KV via Wrangler CLI.
+</details>
+
+<details>
+<summary><strong>Does it work with CDN/proxies?</strong></summary>
+
+Yes. Uses `CF-Connecting-IP` header (or `X-Forwarded-For` fallback) to get real visitor IP.
+</details>
+
+<details>
+<summary><strong>What about GDPR/CCPA compliance?</strong></summary>
+
+Fully compliant:
+- No cookies → no cookie banners needed
+- IP hashing → no PII storage
+- 24h anonymization → right to be forgotten built-in
+</details>
+
+---
+
+## 🔗 Resources
+
+- [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
+- [Wrangler CLI Guide](https://developers.cloudflare.com/workers/wrangler/)
+- [KV Storage Limits](https://developers.cloudflare.com/kv/platform/limits/)
+- [D1 Database Guide](https://developers.cloudflare.com/d1/)
+
+---
+
+## 💬 Support
+
+- **Issues**: [GitHub Issues](https://github.com/Zakkaus/cloudflare-stats-worker/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Zakkaus/cloudflare-stats-worker/discussions)
+
+---
+
+**⭐ Star this repo if you find it useful!**
+
+Made with ❤️ using Cloudflare Workers
