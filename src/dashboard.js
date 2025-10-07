@@ -629,9 +629,34 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 logo: document.getElementById("logo-img")
             };
 
+            const storage = (function createStorage() {
+                try {
+                    if (typeof window !== "undefined" && window.localStorage) {
+                        const testKey = "__stats_dashboard_test__";
+                        window.localStorage.setItem(testKey, "1");
+                        window.localStorage.removeItem(testKey);
+                        return window.localStorage;
+                    }
+                } catch (error) {
+                    console.warn("[dashboard] localStorage unavailable, using in-memory fallback", error);
+                }
+                const memory = new Map();
+                return {
+                    getItem(key) {
+                        return memory.has(key) ? memory.get(key) : null;
+                    },
+                    setItem(key, value) {
+                        memory.set(key, String(value));
+                    },
+                    removeItem(key) {
+                        memory.delete(key);
+                    }
+                };
+            })();
+
             const state = {
-                theme: localStorage.getItem("theme") || "dark",
-                lang: localStorage.getItem("lang") || "zh-TW",
+                theme: storage.getItem("theme") || "dark",
+                lang: storage.getItem("lang") || "zh-TW",
                 currentDays: 7,
                 siteStatus: "loading",
                 dailyStatus: "loading",
@@ -649,7 +674,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             function setTheme(theme) {
                 state.theme = theme;
                 html.setAttribute("data-theme", theme);
-                localStorage.setItem("theme", theme);
+                storage.setItem("theme", theme);
                 updateThemeButton();
                 updateChartTheme();
             }
@@ -675,7 +700,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             function setLang(lang) {
                 state.lang = lang;
                 document.documentElement.lang = lang;
-                localStorage.setItem("lang", lang);
+                storage.setItem("lang", lang);
                 updateLangButton();
                 applyTranslations();
                 updateChartLabels();
