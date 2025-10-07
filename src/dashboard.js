@@ -940,14 +940,14 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     const pv = formatNumber(page.pv);
                     const uv = formatNumber(page.uv);
                     const path = typeof page.path === "string" ? page.path : "—";
-                    return "<li class=\"page-item\">" +
-                        "<div class=\"page-rank\">" + rank + "</div>" +
-                        "<div class=\"page-info\">" +
-                            "<div class=\"page-path\">" + sanitize(path) + "</div>" +
-                            "<div class=\"page-stats\">" + pv + t("views") + " · " + uv + t("visitors") + "</div>" +
-                        "</div>" +
-                        "<div class=\"page-views\">" + pv + "</div>" +
-                    "</li>";
+                    return '<li class="page-item">' +
+                        '<div class="page-rank">' + rank + '</div>' +
+                        '<div class="page-info">' +
+                            '<div class="page-path">' + sanitize(path) + '</div>' +
+                            '<div class="page-stats">' + pv + t("views") + ' · ' + uv + t("visitors") + '</div>' +
+                        '</div>' +
+                        '<div class="page-views">' + pv + '</div>' +
+                    '</li>';
                 }).join("");
                 elements.topList.innerHTML = markup;
             }
