@@ -48,7 +48,7 @@ dep_check wrangler╔═══════════════════�
 
 ║                                                           ║
 
-if ! wrangler whoami >/dev/null 2>&1; then║     Cloudflare Stats Worker 自動安裝腳本 v1.5.0          ║
+if ! wrangler whoami >/dev/null 2>&1; then║     Cloudflare Stats Worker 自動安裝腳本 v1.5.4          ║
 
   info "Logging in to Cloudflare via Wrangler..."║                                                           ║
 

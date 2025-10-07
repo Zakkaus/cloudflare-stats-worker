@@ -3,7 +3,7 @@ import { DASHBOARD_HTML } from './dashboard.js';
 const CACHEABLE_PATHS = new Set(["/api/batch", "/api/stats", "/api/daily", "/logo.webp"]);
 const CACHE_TTL_SECONDS = 30;
 const TOP_CACHE_TTL_SECONDS = 60;
-const WORKER_VERSION = "1.5.1";
+const WORKER_VERSION = "1.6.0";
 const BLOG_LOGO_WEBP_BASE64 = "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";
 const BLOG_LOGO_WEBP_BYTES = base64ToUint8Array(BLOG_LOGO_WEBP_BASE64);
 
@@ -242,6 +242,7 @@ async function handleStats(request, env, corsHeaders) {
       {
         success: true,
         site: { pv: toInt(pvRaw), uv: toInt(uvRaw) },
+        timestamp: new Date().toISOString(),
       },
       corsHeaders,
       200,
@@ -259,6 +260,7 @@ async function handleStats(request, env, corsHeaders) {
     {
       success: true,
       page: { path, pv: toInt(pvRaw), uv: toInt(uvRaw) },
+      timestamp: new Date().toISOString(),
     },
     corsHeaders,
     200,
@@ -373,13 +375,38 @@ function normalizePath(input) {
     return "/";
   }
 
-  let path = input.split("?")[0].split("#")[0];
+  let raw = `${input}`.trim();
+  if (!raw) {
+    return "/";
+  }
+
+  if (raw.startsWith("//")) {
+    raw = `https:${raw}`;
+  }
+
+  let pathSource = raw;
+
+  try {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+      const parsed = new URL(raw);
+      pathSource = parsed.pathname || "/";
+    } else if (/^[a-z][a-z0-9+.-]*:\/[^/]/i.test(raw)) {
+      const fixed = raw.replace(/^([a-z][a-z0-9+.-]*:\/)([^/])/i, "$1/$2");
+      const parsed = new URL(fixed);
+      pathSource = parsed.pathname || "/";
+    }
+  } catch (error) {
+    console.warn("[worker] unable to parse URL, falling back to raw path", raw, error);
+  }
+
+  let path = pathSource.split("?")[0].split("#")[0];
+
   if (!path.startsWith("/")) {
     path = `/${path}`;
   }
 
   path = path.replace(/\/+/g, "/");
-  path = path.replace(/\/index\.html$/i, "/");
+  path = path.replace(/\/index\.html?$/i, "/");
   path = path.replace(/\/index$/i, "/");
   path = path.replace(/\/_index$/i, "/");
 

@@ -1,5 +1,6 @@
 # Cloudflare Stats Worker
 
+[![Version](https://img.shields.io/badge/version-1.6.0-brightgreen.svg)](https://github.com/Zakkaus/cloudflare-stats-worker/releases)
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Zakkaus/cloudflare-stats-worker)
 
 🚀 **輕量級頁面瀏覽統計 API** - 基於 Cloudflare Workers + KV，隱私友善、零成本起步、全球邊緣加速。
@@ -19,6 +20,10 @@
 - **📈 數據儀表板**：內建網頁儀表板含每日趨勢圖表
 - **🎨 雙主題**：支持淺色與深色模式手動切換
 - **📉 圖表視覺化**：使用 Chart.js 展示每日 PV/UV 趨勢
+- **🆕 v1.6.0 新 UI**：玻璃擬態卡片、健康檢查、UTC 更新提示與繁中/英文即時切換
+- **🔄 全站統計一致**：`/api/stats`（無 `url` 參數）同時供 timeline 與儀表板使用，避免首頁 UV 偏低。
+- **⏱️ UTC 刷新提示**：儀表板卡片與趨勢圖顯示「更新於 (UTC)」，方便確認最新數據時間。
+- **🔔 狀態提示**：儀表板卡片會顯示載入/錯誤狀態，並同步顯示最後一次成功更新的 UTC 時戳。
 
 ---
 

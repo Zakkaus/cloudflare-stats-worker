@@ -4,402 +4,1233 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>統計數據 - Cloudflare Stats</title>
-    <meta name="description" content="查看網站訪問統計數據">
+    <title>Cloudflare Stats Dashboard</title>
+    <meta name="description" content="Realtime analytics powered by Cloudflare Workers, KV, and D1">
     <link rel="icon" type="image/svg+xml" href="/logo.webp">
     <link rel="apple-touch-icon" href="/logo.webp">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root[data-theme="light"] {
-            --primary: #2563eb; --primary-light: #3b82f6; --primary-dark: #1d4ed8;
-            --bg: #f8fafc; --card-bg: #ffffff; --text: #1e293b; --text-muted: #64748b;
-            --border: #e2e8f0; --success: #10b981; --error: #ef4444; --shadow: rgba(0, 0, 0, 0.1);
+        *, *::before, *::after { box-sizing: border-box; }
+        :root {
+            --font-family: 'Inter', 'Noto Sans TC', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            --radius: 18px;
+            --shadow: 0 20px 40px -24px rgba(15, 23, 42, 0.55);
+            --headline: #0f172a;
+            --muted: #475569;
+            --border: rgba(148, 163, 184, 0.35);
+            --bg: #f1f5f9;
+            --card-bg: rgba(255, 255, 255, 0.88);
+            --card-border: rgba(148, 163, 184, 0.32);
+            --accent: #3b82f6;
+            --accent-soft: rgba(59, 130, 246, 0.12);
+            --success: #10b981;
+            --success-soft: rgba(16, 185, 129, 0.16);
+            --error: #ef4444;
+            --error-soft: rgba(239, 68, 68, 0.16);
+            --gradient: linear-gradient(135deg, rgba(59, 130, 246, 0.16), rgba(14, 165, 233, 0.1));
         }
-        :root[data-theme="dark"] {
-            --primary: #3b82f6; --primary-light: #60a5fa; --primary-dark: #2563eb;
-            --bg: #0f172a; --card-bg: #1e293b; --text: #e2e8f0; --text-muted: #94a3b8;
-            --border: #334155; --success: #10b981; --error: #ef4444; --shadow: rgba(0, 0, 0, 0.3);
+        html[data-theme="dark"] {
+            --headline: #e2e8f0;
+            --muted: #94a3b8;
+            --border: rgba(148, 163, 184, 0.18);
+            --bg: #0f172a;
+            --card-bg: rgba(15, 23, 42, 0.82);
+            --card-border: rgba(30, 41, 59, 0.65);
+            --accent: #60a5fa;
+            --accent-soft: rgba(96, 165, 250, 0.24);
+            --success: #34d399;
+            --success-soft: rgba(52, 211, 153, 0.18);
+            --error: #f87171;
+            --error-soft: rgba(248, 113, 113, 0.18);
+            --gradient: linear-gradient(135deg, rgba(59, 130, 246, 0.28), rgba(14, 165, 233, 0.18));
+            color-scheme: dark;
         }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: var(--bg); color: var(--text); line-height: 1.6; padding: 20px; transition: background-color 0.3s, color 0.3s; }
-        .container { max-width: 1400px; margin: 0 auto; }
-        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;
-            padding: 30px 0; border-bottom: 2px solid var(--border); flex-wrap: wrap; gap: 20px; }
-        .header-left { flex: 1; display: flex; align-items: center; gap: 20px; }
-        .logo-container { width: 60px; height: 60px; }
-        .logo { width: 100%; height: 100%; object-fit: contain; }
-        .header-text { flex: 1; }
-        h1 { font-size: 2.5rem; margin-bottom: 10px;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .subtitle { color: var(--text-muted); font-size: 1.1rem; }
-        .header-controls { display: flex; gap: 10px; align-items: center; }
-        .lang-toggle, .theme-toggle { padding: 10px 16px; background: var(--card-bg); border: 1px solid var(--border);
-            border-radius: 8px; color: var(--text); cursor: pointer; transition: all 0.2s;
-            font-size: 0.95rem; display: flex; align-items: center; gap: 6px; }
-        .lang-toggle:hover, .theme-toggle:hover { background: var(--primary); color: white; border-color: var(--primary); }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 40px; }
-        .stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
-            padding: 24px; transition: transform 0.2s, box-shadow 0.2s; box-shadow: 0 1px 3px var(--shadow); }
-        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px var(--shadow); }
-        .stat-label { color: var(--text-muted); font-size: 0.9rem; text-transform: uppercase;
-            letter-spacing: 0.5px; margin-bottom: 8px; }
-        .stat-value { font-size: 2.5rem; font-weight: bold; color: var(--primary); }
-        .stat-change { font-size: 0.85rem; margin-top: 8px; color: var(--success); }
-        .chart-section { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
-            padding: 30px; margin-bottom: 30px; box-shadow: 0 1px 3px var(--shadow); }
-        .chart-section h2 { margin-bottom: 20px; font-size: 1.5rem; color: var(--text); }
-        .chart-controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-        .chart-controls button { padding: 8px 16px; background: var(--card-bg); border: 1px solid var(--border);
-            border-radius: 6px; color: var(--text); cursor: pointer; transition: all 0.2s; }
-        .chart-controls button:hover, .chart-controls button.active { background: var(--primary); color: white; border-color: var(--primary); }
-        .chart-container { position: relative; height: 400px; }
-        .search-section { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
-            padding: 30px; margin-bottom: 30px; box-shadow: 0 1px 3px var(--shadow); }
-        .search-section h2 { margin-bottom: 20px; font-size: 1.5rem; }
-        .search-box { display: flex; gap: 10px; margin-bottom: 20px; }
-        input[type="text"] { flex: 1; padding: 12px 16px; background: var(--bg); border: 1px solid var(--border);
-            border-radius: 8px; color: var(--text); font-size: 1rem; transition: border-color 0.2s; }
-        input[type="text"]:focus { outline: none; border-color: var(--primary); }
-        button { padding: 12px 24px; background: var(--primary); color: white; border: none;
-            border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; transition: background 0.2s; }
-        button:hover { background: var(--primary-dark); }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .result { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; display: none; }
-        .result.show { display: block; }
-        .result-header { display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
-        .result-path { font-size: 1.2rem; font-weight: 600; color: var(--text); }
-        .result-stats { display: flex; gap: 30px; }
-        .result-stat { text-align: center; }
-        .result-stat-label { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; }
-        .result-stat-value { font-size: 1.8rem; font-weight: bold; color: var(--primary); }
-        .top-pages { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
-            padding: 30px; box-shadow: 0 1px 3px var(--shadow); }
-        .top-pages h2 { margin-bottom: 20px; font-size: 1.5rem; }
-        .page-list { list-style: none; }
-        .page-item { display: flex; justify-content: space-between; align-items: center; padding: 16px;
-            margin-bottom: 10px; background: var(--bg); border: 1px solid var(--border);
-            border-radius: 8px; transition: border-color 0.2s; }
-        .page-item:hover { border-color: var(--primary); }
-        .page-rank { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-            background: var(--primary); color: white; border-radius: 50%; font-weight: bold; font-size: 0.9rem; }
-        .page-info { flex: 1; margin: 0 20px; }
-        .page-path { font-weight: 500; margin-bottom: 4px; }
-        .page-stats { font-size: 0.85rem; color: var(--text-muted); }
-        .page-views { font-size: 1.2rem; font-weight: 600; color: var(--primary); }
-        .error { background: var(--error); color: white; padding: 16px; border-radius: 8px; margin-top: 20px; }
-        .loading { text-align: center; padding: 40px; color: var(--text-muted); }
-        .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--primary);
-            border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        footer { margin-top: 60px; padding-top: 30px; border-top: 1px solid var(--border);
-            text-align: center; color: var(--text-muted); font-size: 0.9rem; }
-        footer a { color: var(--primary); text-decoration: none; }
-        footer a:hover { text-decoration: underline; }
-        @media (max-width: 768px) {
-            h1 { font-size: 2rem; }
-            header { flex-direction: column; text-align: center; }
-            .header-left { flex-direction: column; }
-            .stats-grid { grid-template-columns: 1fr; }
-            .result-stats { flex-direction: column; gap: 16px; }
-            .chart-container { height: 300px; }
+        body {
+            margin: 0;
+            font-family: var(--font-family);
+            background: var(--bg);
+            color: var(--headline);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: 32px 18px 48px;
+        }
+        .page {
+            width: min(1120px, 100%);
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius);
+            backdrop-filter: blur(18px);
+            box-shadow: var(--shadow);
+        }
+        header.page__header {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        .hero {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
+        .hero__title {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .hero__title img {
+            width: 64px;
+            height: 64px;
+            border-radius: 18px;
+            border: 1px solid var(--card-border);
+            background: rgba(255, 255, 255, 0.2);
+            object-fit: cover;
+        }
+        .hero__title h1 {
+            margin: 0;
+            font-size: clamp(1.8rem, 4vw, 2.35rem);
+            letter-spacing: -0.02em;
+        }
+        .hero__title p {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 1rem;
+        }
+        .hero__actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .pill-button {
+            border: 1px solid var(--card-border);
+            background: var(--card-bg);
+            color: var(--headline);
+            border-radius: 999px;
+            padding: 8px 16px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+        }
+        .pill-button:link,
+        .pill-button:visited {
+            color: var(--headline);
+        }
+        .pill-button span.icon {
+            font-size: 1.1rem;
+            line-height: 1;
+        }
+        .pill-button:hover {
+            background: var(--accent-soft);
+            border-color: var(--accent);
+            transform: translateY(-1px);
+        }
+        main.page__main {
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+        }
+        .grid {
+            display: grid;
+            gap: 20px;
+        }
+        .stats-grid {
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        }
+        .stat-card {
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .stat-card h2 {
+            margin: 0;
+            color: var(--muted);
+            font-size: 0.9rem;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+        .stat-card .value {
+            font-size: clamp(1.8rem, 4vw, 2.35rem);
+            font-weight: 700;
+        }
+        .stat-card .note {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+        .stat-card.today {
+            border: 1px solid var(--accent);
+            background: var(--accent-soft);
+        }
+        .status-card {
+            padding: 24px;
+            display: grid;
+            gap: 16px;
+            background: var(--gradient);
+        }
+        .status-card h3 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+        .status-row {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 0.98rem;
+        }
+        .status-row span.label {
+            color: var(--muted);
+        }
+        .status-value {
+            font-weight: 600;
+        }
+        .chart-card {
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .chart-controls {
+            display: inline-flex;
+            gap: 6px;
+            background: rgba(59, 130, 246, 0.08);
+            padding: 6px;
+            border-radius: 999px;
+        }
+        .chart-controls button {
+            border: none;
+            background: transparent;
+            border-radius: 999px;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 0.92rem;
+            color: var(--muted);
+            transition: background 0.18s ease, color 0.18s ease;
+        }
+        .chart-controls button.active {
+            background: white;
+            color: var(--accent);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.24);
+        }
+        html[data-theme="dark"] .chart-controls button.active {
+            background: rgba(15, 23, 42, 0.7);
+            color: var(--accent);
+        }
+        .chart-meta {
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+        .chart-wrapper {
+            position: relative;
+            width: 100%;
+            height: 320px;
+        }
+        .chart-error {
+            color: var(--error);
+            background: var(--error-soft);
+            border-radius: 12px;
+            padding: 12px 16px;
+            display: none;
+        }
+        .search-card {
+            padding: 24px;
+            display: grid;
+            gap: 18px;
+        }
+        .search-card form {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .search-card input {
+            flex: 1 1 260px;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 1rem;
+            background: rgba(255, 255, 255, 0.85);
+            color: var(--headline);
+        }
+        html[data-theme="dark"] .search-card input {
+            background: rgba(15, 23, 42, 0.85);
+            color: var(--headline);
+        }
+        .search-card button.primary {
+            border: none;
+            border-radius: 12px;
+            background: var(--accent);
+            color: white;
+            padding: 12px 22px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+        .search-card button.primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(59, 130, 246, 0.28);
+        }
+        .search-error {
+            display: none;
+            color: var(--error);
+            background: var(--error-soft);
+            border-radius: 12px;
+            padding: 12px 16px;
+        }
+        .search-result {
+            display: none;
+            padding: 16px 20px;
+            border-radius: 14px;
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba(59, 130, 246, 0.16);
+        }
+        .search-result.show {
+            display: block;
+        }
+        .search-result strong {
+            display: block;
+            font-size: 1.05rem;
+            margin-bottom: 6px;
+        }
+        .search-result span.muted {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+        .top-card {
+            padding: 24px;
+            display: grid;
+            gap: 18px;
+        }
+        .top-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: grid;
+            gap: 12px;
+        }
+        .page-item {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 16px;
+            align-items: center;
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: 1px solid var(--card-border);
+            background: rgba(255, 255, 255, 0.6);
+        }
+        html[data-theme="dark"] .page-item {
+            background: rgba(15, 23, 42, 0.65);
+        }
+        .page-rank {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--accent);
+            min-width: 28px;
+        }
+        .page-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .page-path {
+            font-weight: 600;
+        }
+        .page-stats {
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+        .page-views {
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+        .top-loading,
+        .top-error {
+            font-size: 0.92rem;
+            color: var(--muted);
+        }
+        .top-error {
+            color: var(--error);
+        }
+        footer.page__footer {
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--muted);
+            padding: 12px 0 24px;
+        }
+        footer.page__footer a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        footer.page__footer a:hover {
+            text-decoration: underline;
+        }
+        @media (max-width: 720px) {
+            body { padding: 24px 14px 32px; }
+            .hero { flex-direction: column; align-items: flex-start; }
+            .hero__actions { width: 100%; justify-content: stretch; }
+            .hero__actions button { flex: 1 1 auto; justify-content: center; }
+            .page-item { grid-template-columns: 1fr; }
+            .page-views { justify-self: flex-start; }
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-Nb9nMcJ0xXL9sc8Cjylr3rFWysFNOlTR7ANJ0lV7VqvJSAJaR7HhuJui9n1NsRGd" crossorigin="anonymous"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div class="header-left">
-                <div class="logo-container">
-                    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%233b82f6'/%3E%3Ctext x='50' y='65' font-size='50' text-anchor='middle' fill='white' font-family='Arial, sans-serif' font-weight='bold'%3EZ%3C/text%3E%3C/svg%3E" alt="Logo" class="logo" id="logo-img">
+    <div class="page">
+        <header class="page__header">
+            <div class="card hero">
+                <div class="hero__title">
+                    <img id="logo-img" src="/logo.webp" alt="Cloudflare Stats logo" width="64" height="64" loading="lazy">
+                    <div>
+                        <h1 data-i18n="title">統計數據儀表板</h1>
+                        <p data-i18n="subtitle">實時查看網站訪問統計</p>
+                    </div>
                 </div>
-                <div class="header-text">
-                    <h1><span data-i18n="title">統計數據儀表板</span></h1>
-                    <p class="subtitle" data-i18n="subtitle">實時查看網站訪問統計</p>
+                <div class="hero__actions">
+                    <button id="theme-toggle" class="pill-button" type="button">
+                        <span id="theme-icon" class="icon">🌙</span>
+                        <span id="theme-text" data-i18n="darkMode">深色模式</span>
+                    </button>
+                    <button id="lang-toggle" class="pill-button" type="button">
+                        <span class="icon">🌐</span>
+                        <span id="lang-text">EN</span>
+                    </button>
+                    <a id="repo-link" class="pill-button" href="https://github.com/Zakkaus/cloudflare-stats-worker" target="_blank" rel="noopener">
+                        <span class="icon">💻</span>
+                        <span data-i18n="githubRepo">GitHub</span>
+                    </a>
                 </div>
             </div>
-            <div class="header-controls">
-                <button class="lang-toggle" id="lang-toggle">
-                    <span id="lang-icon">🌐</span>
-                    <span id="lang-text">EN</span>
-                </button>
-                <button class="theme-toggle" id="theme-toggle">
-                    <span id="theme-icon">🌙</span>
-                    <span id="theme-text" data-i18n="darkMode">深色模式</span>
-                </button>
+            <div class="grid stats-grid">
+                <article class="card stat-card">
+                    <h2 data-i18n="totalPageViews">全站總瀏覽量</h2>
+                    <div id="site-pv" class="value">—</div>
+                    <div class="note">—</div>
+                </article>
+                <article class="card stat-card">
+                    <h2 data-i18n="totalUniqueVisitors">全站訪客數</h2>
+                    <div id="site-uv" class="value">—</div>
+                    <div class="note">—</div>
+                </article>
+                <article class="card stat-card today">
+                    <h2 data-i18n="todayPageViews">今日瀏覽量</h2>
+                    <div id="today-pv" class="value">—</div>
+                    <div class="note" data-i18n="loading">載入中...</div>
+                </article>
             </div>
         </header>
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-label" data-i18n="totalPageViews">全站總瀏覽量</div><div class="stat-value" id="site-pv">-</div><div class="stat-change">載入中...</div></div>
-            <div class="stat-card"><div class="stat-label" data-i18n="totalUniqueVisitors">全站訪客數</div><div class="stat-value" id="site-uv">-</div><div class="stat-change">載入中...</div></div>
-            <div class="stat-card"><div class="stat-label" data-i18n="todayPageViews">今日瀏覽量</div><div class="stat-value" id="today-pv">-</div><div class="stat-change">載入中...</div></div>
-            <div class="stat-card"><div class="stat-label" data-i18n="apiStatus">API 狀態</div><div class="stat-value" id="api-status">-</div><div class="stat-change" id="api-version">-</div></div>
-        </div>
-        <div class="chart-section">
-            <h2><span data-i18n="dailyTrend">📈 每日訪問趨勢</span></h2>
-            <div class="chart-controls">
-                <button class="active" data-days="7" data-i18n="last7Days">過去 7 天</button>
-                <button data-days="14" data-i18n="last14Days">過去 14 天</button>
-                <button data-days="30" data-i18n="last30Days">過去 30 天</button>
-            </div>
-            <div class="chart-container"><canvas id="dailyChart"></canvas></div>
-            <div id="daily-error" class="error" style="display:none"></div>
-        </div>
-        <div class="search-section">
-            <h2><span data-i18n="searchPage">🔍 查詢頁面統計</span></h2>
-            <div class="search-box">
-                <input type="text" id="path-input" data-i18n-placeholder="searchPlaceholder" placeholder="輸入路徑，例如: /posts/hello-world/" value="/">
-                <button id="search-btn" data-i18n="search">查詢</button>
-            </div>
-            <div id="search-result" class="result">
-                <div class="result-header"><div class="result-path" id="result-path"></div></div>
-                <div class="result-stats">
-                    <div class="result-stat"><div class="result-stat-label" data-i18n="pageViews">頁面瀏覽量</div><div class="result-stat-value" id="result-pv">-</div></div>
-                    <div class="result-stat"><div class="result-stat-label" data-i18n="uniqueVisitors">獨立訪客</div><div class="result-stat-value" id="result-uv">-</div></div>
+
+        <main class="page__main">
+            <section class="card status-card">
+                <h3 data-i18n="apiStatus">API 狀態</h3>
+                <div class="status-row">
+                    <span class="label" data-i18n="poweredBy">Powered by</span>
+                    <span class="status-value">Cloudflare Workers · KV · D1</span>
                 </div>
-            </div>
-            <div id="search-error"></div>
-        </div>
-        <div class="top-pages">
-            <h2><span data-i18n="topPages">🔥 熱門頁面 Top 10</span></h2>
-            <div id="top-loading" class="loading"><div class="spinner"></div><div data-i18n="loading">載入中...</div></div>
-            <ul id="top-list" class="page-list"></ul>
-            <div id="top-error"></div>
-        </div>
-        <footer>
-            <p><span data-i18n="poweredBy">Powered by</span> <a href="https://github.com/Zakkaus/cloudflare-stats-worker" target="_blank">Cloudflare Stats Worker</a> • <a href="https://zakk.au" target="_blank">zakk.au</a></p>
+                <div class="status-row">
+                    <span class="label" data-i18n="apiStatus">API 狀態</span>
+                    <span id="api-status" class="status-value">—</span>
+                </div>
+                <div class="status-row">
+                    <span class="label" data-i18n="version">版本</span>
+                    <span id="api-version" class="status-value">—</span>
+                </div>
+                <div class="status-row">
+                    <span class="label" data-i18n="chartUpdatedPrefix">趨勢圖資料更新 (UTC)</span>
+                    <span id="daily-updated" class="status-value">—</span>
+                </div>
+            </section>
+
+            <section class="card chart-card">
+                <div class="chart-header">
+                    <div>
+                        <h3 data-i18n="dailyTrend">📈 每日訪問趨勢</h3>
+                        <p id="daily-error" class="chart-error" role="alert"></p>
+                    </div>
+                    <div class="chart-controls">
+                        <button type="button" data-days="7" class="active" data-i18n="last7Days">過去 7 天</button>
+                        <button type="button" data-days="14" data-i18n="last14Days">過去 14 天</button>
+                        <button type="button" data-days="30" data-i18n="last30Days">過去 30 天</button>
+                    </div>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="dailyChart" role="img" aria-label="Daily PV/UV chart"></canvas>
+                </div>
+            </section>
+
+            <section class="card search-card">
+                <h3 data-i18n="searchPage">🔍 查詢頁面統計</h3>
+                <form id="search-form" autocomplete="off">
+                    <input id="path-input" type="text" name="path" placeholder="/posts/hello-world/" data-i18n-placeholder="searchPlaceholder">
+                    <button id="search-btn" class="primary" type="submit" data-i18n="search">查詢</button>
+                </form>
+                <div id="search-error" class="search-error" role="alert"></div>
+                <div id="search-result" class="search-result" aria-live="polite">
+                    <strong id="result-path">—</strong>
+                    <span class="muted">
+                        <span id="result-pv">0</span> <span data-i18n="views">次瀏覽</span> ·
+                        <span id="result-uv">0</span> <span data-i18n="visitors">位訪客</span>
+                    </span>
+                </div>
+            </section>
+
+            <section class="card top-card">
+                <div class="header">
+                    <h3 data-i18n="topPages">🔥 熱門頁面 Top 10</h3>
+                </div>
+                <div id="top-loading" class="top-loading" data-i18n="loading">載入中...</div>
+                <div id="top-error" class="top-error" role="alert"></div>
+                <ol id="top-list" class="top-list"></ol>
+            </section>
+        </main>
+
+        <footer class="page__footer">
+            <span data-i18n="poweredBy">Powered by</span>
+            <a href="https://github.com/Zakkaus/cloudflare-stats-worker" rel="noopener" target="_blank">Cloudflare Stats Worker</a>
         </footer>
     </div>
+
     <script>
-        const API_BASE = window.location.origin;
-        let dailyChart = null, currentDays = 7, currentLang = 'zh-TW';
-        const i18n = {
-            'zh-TW': {
-                title: '統計數據儀表板', subtitle: '實時查看網站訪問統計', darkMode: '深色模式', lightMode: '淺色模式',
-                totalPageViews: '全站總瀏覽量', totalUniqueVisitors: '全站訪客數', todayPageViews: '今日瀏覽量', apiStatus: 'API 狀態',
-                dailyTrend: '📈 每日訪問趨勢', last7Days: '過去 7 天', last14Days: '過去 14 天', last30Days: '過去 30 天',
-                searchPage: '🔍 查詢頁面統計', searchPlaceholder: '輸入路徑，例如: /posts/hello-world/', search: '查詢',
-                pageViews: '頁面瀏覽量', uniqueVisitors: '獨立訪客', topPages: '🔥 熱門頁面 Top 10',
-                loading: '載入中...', total: '總計', today: '今日', normal: '✅ 正常', error: '❌ 錯誤', version: '版本',
-                cannotConnect: '無法連接', loadFailed: '載入失敗', poweredBy: 'Powered by',
-                pvLabel: '瀏覽量 (PV)', uvLabel: '訪客數 (UV)', views: '次瀏覽', visitors: '位訪客',
-                noData: '暫無熱門頁面數據', loadError: '載入失敗', noDailyData: '暫無趨勢數據，已顯示 0'
-            },
-            'en': {
-                title: 'Statistics Dashboard', subtitle: 'Real-time website analytics', darkMode: 'Dark Mode', lightMode: 'Light Mode',
-                totalPageViews: 'Total Page Views', totalUniqueVisitors: 'Total Unique Visitors', todayPageViews: 'Today\\'s Views', apiStatus: 'API Status',
-                dailyTrend: '📈 Daily Traffic Trend', last7Days: 'Last 7 Days', last14Days: 'Last 14 Days', last30Days: 'Last 30 Days',
-                searchPage: '🔍 Search Page Stats', searchPlaceholder: 'Enter path, e.g.: /posts/hello-world/', search: 'Search',
-                pageViews: 'Page Views', uniqueVisitors: 'Unique Visitors', topPages: '🔥 Top 10 Pages',
-                loading: 'Loading...', total: 'Total', today: 'Today', normal: '✅ Normal', error: '❌ Error', version: 'Version',
-                cannotConnect: 'Cannot Connect', loadFailed: 'Load Failed', poweredBy: 'Powered by',
-                pvLabel: 'Page Views (PV)', uvLabel: 'Unique Visitors (UV)', views: ' views', visitors: ' visitors',
-                noData: 'No popular pages yet', loadError: 'Load failed', noDailyData: 'No trend data yet. Showing zeros.'
-            }
-        };
-        function updateI18n() {
-            document.querySelectorAll('[data-i18n]').forEach(el => {
-                const key = el.getAttribute('data-i18n');
-                if (i18n[currentLang] && i18n[currentLang][key]) el.textContent = i18n[currentLang][key];
-            });
-            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-                const key = el.getAttribute('data-i18n-placeholder');
-                if (i18n[currentLang] && i18n[currentLang][key]) el.placeholder = i18n[currentLang][key];
-            });
-            document.documentElement.lang = currentLang;
-            if (dailyChart) { dailyChart.data.datasets[0].label = i18n[currentLang].pvLabel; dailyChart.data.datasets[1].label = i18n[currentLang].uvLabel; dailyChart.update(); }
-        }
-        const themeToggle = document.getElementById('theme-toggle'), themeIcon = document.getElementById('theme-icon'),
-              themeText = document.getElementById('theme-text'), langToggle = document.getElementById('lang-toggle'),
-              langText = document.getElementById('lang-text'), html = document.documentElement;
-        const savedTheme = localStorage.getItem('theme') || 'dark', savedLang = localStorage.getItem('lang') || 'zh-TW';
-        html.setAttribute('data-theme', savedTheme); currentLang = savedLang;
-        updateThemeButton(savedTheme); langText.textContent = currentLang === 'zh-TW' ? 'EN' : '中文'; updateI18n();
-        themeToggle.addEventListener('click', () => {
-            const currentTheme = html.getAttribute('data-theme'), newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            html.setAttribute('data-theme', newTheme); localStorage.setItem('theme', newTheme);
-            updateThemeButton(newTheme); if (dailyChart) updateChartTheme();
-        });
-        langToggle.addEventListener('click', () => {
-            currentLang = currentLang === 'zh-TW' ? 'en' : 'zh-TW';
-            localStorage.setItem('lang', currentLang); langText.textContent = currentLang === 'zh-TW' ? 'EN' : '中文'; updateI18n();
-        });
-        function updateThemeButton(theme) {
-            if (theme === 'dark') { themeIcon.textContent = '🌙'; themeText.textContent = i18n[currentLang].darkMode; }
-            else { themeIcon.textContent = '☀️'; themeText.textContent = i18n[currentLang].lightMode; }
-        }
-        async function loadSiteStats() {
-            try {
-                const res = await fetch(\`\${API_BASE}/api/stats?url=/\`), data = await res.json();
-                if (data.success) {
-                    document.getElementById('site-pv').textContent = formatNumber(data.page?.pv || 0);
-                    document.getElementById('site-uv').textContent = formatNumber(data.page?.uv || 0);
-                    document.querySelector('#site-pv').nextElementSibling.textContent = i18n[currentLang].total;
-                    document.querySelector('#site-uv').nextElementSibling.textContent = i18n[currentLang].total;
-                }
-            } catch (err) {
-                document.querySelector('#site-pv').nextElementSibling.textContent = i18n[currentLang].loadFailed;
-                document.querySelector('#site-uv').nextElementSibling.textContent = i18n[currentLang].loadFailed;
-            }
-        }
-        async function checkHealth() {
-            try {
-                const res = await fetch(\`\${API_BASE}/health\`), data = await res.json();
-                if (data.status === 'ok') {
-                    document.getElementById('api-status').textContent = i18n[currentLang].normal;
-                    document.getElementById('api-version').textContent = \`\${i18n[currentLang].version} \${data.version}\`;
-                }
-            } catch (err) {
-                document.getElementById('api-status').textContent = i18n[currentLang].error;
-                document.getElementById('api-version').textContent = i18n[currentLang].cannotConnect;
-            }
-        }
-        function initChart() {
-            const ctx = document.getElementById('dailyChart').getContext('2d');
-            const theme = html.getAttribute('data-theme'), isDark = theme === 'dark';
-            const textColor = isDark ? '#e2e8f0' : '#1e293b', gridColor = isDark ? '#334155' : '#e2e8f0';
-            if (dailyChart) dailyChart.destroy();
-            dailyChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [
-                        { label: i18n[currentLang].pvLabel, data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderWidth: 2, fill: true, tension: 0.4 },
-                        { label: i18n[currentLang].uvLabel, data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 2, fill: true, tension: 0.4 }
-                    ]
+        (function () {
+            "use strict";
+
+            const API_BASE = window.location.origin;
+            const html = document.documentElement;
+            const i18n = {
+                "zh-TW": {
+                    title: "統計數據儀表板",
+                    subtitle: "實時查看網站訪問統計",
+                    darkMode: "深色模式",
+                    lightMode: "淺色模式",
+                    totalPageViews: "全站總瀏覽量",
+                    totalUniqueVisitors: "全站訪客數",
+                    todayPageViews: "今日瀏覽量",
+                    apiStatus: "API 當前狀態",
+                    dailyTrend: "📈 每日訪問趨勢",
+                    last7Days: "過去 7 天",
+                    last14Days: "過去 14 天",
+                    last30Days: "過去 30 天",
+                    searchPage: "🔍 查詢頁面統計",
+                    searchPlaceholder: "輸入路徑，例如: /posts/hello-world/",
+                    search: "查詢",
+                    pageViews: "頁面瀏覽量",
+                    uniqueVisitors: "獨立訪客",
+                    topPages: "🔥 熱門頁面 Top 10",
+                    loading: "載入中...",
+                    total: "總計",
+                    today: "今日",
+                    normal: "✅ 正常",
+                    error: "❌ 錯誤",
+                    version: "版本",
+                    cannotConnect: "無法連接",
+                    loadFailed: "載入失敗",
+                    poweredBy: "Powered by",
+                    pvLabel: "瀏覽量 (PV)",
+                    uvLabel: "訪客數 (UV)",
+                    views: "次瀏覽",
+                    visitors: "位訪客",
+                    noData: "暫無熱門頁面數據",
+                    loadError: "載入失敗",
+                    noDailyData: "暫無趨勢數據，已顯示 0",
+                    updatedAtPrefix: "更新於 (UTC)",
+                    chartUpdatedPrefix: "趨勢圖資料更新 (UTC)",
+                    searchPlaceholderError: "請至少輸入一個路徑，例如 /posts/hello-world/",
+                    searchNoResult: "找不到這個路徑的數據",
+                    githubRepo: "GitHub 倉庫"
                 },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { labels: { color: textColor, font: { size: 12 } } }, tooltip: { mode: 'index', intersect: false } },
-                    scales: {
-                        y: { beginAtZero: true, ticks: { color: textColor }, grid: { color: gridColor } },
-                        x: { ticks: { color: textColor }, grid: { color: gridColor } }
-                    }
+                "en": {
+                    title: "Statistics Dashboard",
+                    subtitle: "Real-time website analytics",
+                    darkMode: "Dark Mode",
+                    lightMode: "Light Mode",
+                    totalPageViews: "Total Page Views",
+                    totalUniqueVisitors: "Total Unique Visitors",
+                    todayPageViews: "Today's Views",
+                    apiStatus: "API Status",
+                    dailyTrend: "📈 Daily Traffic Trend",
+                    last7Days: "Last 7 Days",
+                    last14Days: "Last 14 Days",
+                    last30Days: "Last 30 Days",
+                    searchPage: "🔍 Search Page Stats",
+                    searchPlaceholder: "Enter path, e.g. /posts/hello-world/",
+                    search: "Search",
+                    pageViews: "Page Views",
+                    uniqueVisitors: "Unique Visitors",
+                    topPages: "🔥 Top 10 Pages",
+                    loading: "Loading...",
+                    total: "Total",
+                    today: "Today",
+                    normal: "✅ Normal",
+                    error: "❌ Error",
+                    version: "Version",
+                    cannotConnect: "Cannot Connect",
+                    loadFailed: "Load Failed",
+                    poweredBy: "Powered by",
+                    pvLabel: "Page Views (PV)",
+                    uvLabel: "Unique Visitors (UV)",
+                    views: " views",
+                    visitors: " visitors",
+                    noData: "No popular pages yet",
+                    loadError: "Load failed",
+                    noDailyData: "No trend data yet. Showing zeros.",
+                    updatedAtPrefix: "Updated (UTC)",
+                    chartUpdatedPrefix: "Trend refreshed (UTC)",
+                    searchPlaceholderError: "Please enter a path such as /posts/hello-world/",
+                    searchNoResult: "No stats found for this path",
+                    githubRepo: "GitHub Repo"
                 }
-            });
-        }
-        function updateChartTheme() {
-            if (!dailyChart) return;
-            const theme = html.getAttribute('data-theme'), isDark = theme === 'dark';
-            const textColor = isDark ? '#e2e8f0' : '#1e293b', gridColor = isDark ? '#334155' : '#e2e8f0';
-            dailyChart.options.plugins.legend.labels.color = textColor;
-            dailyChart.options.scales.y.ticks.color = textColor; dailyChart.options.scales.y.grid.color = gridColor;
-            dailyChart.options.scales.x.ticks.color = textColor; dailyChart.options.scales.x.grid.color = gridColor;
-            dailyChart.update();
-        }
-        async function loadDailyChart(days = 7) {
-            const todayValueEl = document.getElementById('today-pv');
-            const todayLabelEl = todayValueEl ? todayValueEl.nextElementSibling : null;
-            const errorEl = document.getElementById('daily-error');
-            if (todayLabelEl) todayLabelEl.textContent = i18n[currentLang].loading;
-            if (errorEl) errorEl.style.display = 'none';
+            };
 
-            try {
-                const res = await fetch(\`\${API_BASE}/api/daily?days=\${days}&t=\${Date.now()}\`);
-                if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
-                const data = await res.json();
-                const hasResults = Array.isArray(data.results) && data.results.length > 0;
-                const series = hasResults
-                    ? data.results
-                    : Array.from({ length: days }, (_, idx) => {
-                        const date = new Date();
-                        date.setDate(date.getDate() - (days - 1 - idx));
-                        return { date: date.toISOString().split('T')[0], pv: 0, uv: 0 };
-                    });
+            const elements = {
+                sitePv: document.getElementById("site-pv"),
+                siteUv: document.getElementById("site-uv"),
+                siteNotes: Array.from(document.querySelectorAll(".stat-card:not(.today) .note")),
+                todayPv: document.getElementById("today-pv"),
+                todayNote: document.querySelector(".stat-card.today .note"),
+                apiStatus: document.getElementById("api-status"),
+                apiVersion: document.getElementById("api-version"),
+                chartUpdated: document.getElementById("daily-updated"),
+                chartError: document.getElementById("daily-error"),
+                chartCanvas: document.getElementById("dailyChart"),
+                chartButtons: document.querySelectorAll(".chart-controls button"),
+                themeToggle: document.getElementById("theme-toggle"),
+                themeIcon: document.getElementById("theme-icon"),
+                themeText: document.getElementById("theme-text"),
+                langToggle: document.getElementById("lang-toggle"),
+                langText: document.getElementById("lang-text"),
+                searchForm: document.getElementById("search-form"),
+                pathInput: document.getElementById("path-input"),
+                searchResult: document.getElementById("search-result"),
+                resultPath: document.getElementById("result-path"),
+                resultPv: document.getElementById("result-pv"),
+                resultUv: document.getElementById("result-uv"),
+                searchError: document.getElementById("search-error"),
+                topLoading: document.getElementById("top-loading"),
+                topList: document.getElementById("top-list"),
+                topError: document.getElementById("top-error"),
+                logo: document.getElementById("logo-img")
+            };
 
-                updateDailyChart(series);
+            const state = {
+                theme: localStorage.getItem("theme") || "dark",
+                lang: localStorage.getItem("lang") || "zh-TW",
+                currentDays: 7,
+                siteStatus: "loading",
+                dailyStatus: "loading",
+                lastSiteTimestamp: null,
+                lastDailyTimestamp: null,
+                chart: null,
+                topPages: [],
+                lastSeries: []
+            };
 
-                const todayData = series[series.length - 1] || { pv: 0 };
-                if (todayValueEl) todayValueEl.textContent = formatNumber(todayData.pv || 0);
-                if (todayLabelEl) todayLabelEl.textContent = i18n[currentLang].today;
-                if (!hasResults && errorEl) {
-                    errorEl.style.display = 'block';
-                    errorEl.textContent = i18n[currentLang].noDailyData;
+            function t(key) {
+                return (i18n[state.lang] && i18n[state.lang][key]) || key;
+            }
+
+            function setTheme(theme) {
+                state.theme = theme;
+                html.setAttribute("data-theme", theme);
+                localStorage.setItem("theme", theme);
+                updateThemeButton();
+                updateChartTheme();
+            }
+
+            function toggleTheme() {
+                const next = state.theme === "dark" ? "light" : "dark";
+                setTheme(next);
+            }
+
+            function updateThemeButton() {
+                if (!elements.themeIcon || !elements.themeText) {
+                    return;
                 }
-            } catch (err) {
-                console.warn('[dashboard] daily fetch error', err);
-                const fallbackSeries = Array.from({ length: days }, (_, idx) => {
-                    const date = new Date();
-                    date.setDate(date.getDate() - (days - 1 - idx));
-                    return { date: date.toISOString().split('T')[0], pv: 0, uv: 0 };
-                });
-                updateDailyChart(fallbackSeries);
-                if (todayValueEl) todayValueEl.textContent = '0';
-                if (todayLabelEl) todayLabelEl.textContent = i18n[currentLang].today;
-                if (errorEl) {
-                    errorEl.style.display = 'block';
-                    errorEl.textContent = i18n[currentLang].loadFailed;
+                if (state.theme === "dark") {
+                    elements.themeIcon.textContent = "🌙";
+                    elements.themeText.textContent = t("darkMode");
+                } else {
+                    elements.themeIcon.textContent = "☀️";
+                    elements.themeText.textContent = t("lightMode");
                 }
             }
-        }
-        function updateDailyChart(series) {
-            if (!dailyChart) return;
-            const labels = series.map((item) => {
-                const date = new Date(item.date);
-                if (Number.isNaN(date.getTime())) return item.date;
-                return \`\${date.getMonth() + 1}/\${date.getDate()}\`;
+
+            function setLang(lang) {
+                state.lang = lang;
+                document.documentElement.lang = lang;
+                localStorage.setItem("lang", lang);
+                updateLangButton();
+                applyTranslations();
+                updateChartLabels();
+                renderSiteStatus();
+                renderDailyStatus();
+                renderTopPages(state.topPages);
+            }
+
+            function toggleLang() {
+                const next = state.lang === "zh-TW" ? "en" : "zh-TW";
+                setLang(next);
+            }
+
+            function updateLangButton() {
+                if (elements.langText) {
+                    elements.langText.textContent = state.lang === "zh-TW" ? "EN" : "中文";
+                }
+            }
+
+            function applyTranslations() {
+                document.querySelectorAll("[data-i18n]").forEach(function (node) {
+                    const key = node.getAttribute("data-i18n");
+                    if (key) {
+                        node.textContent = t(key);
+                    }
+                });
+                document.querySelectorAll("[data-i18n-placeholder]").forEach(function (node) {
+                    const key = node.getAttribute("data-i18n-placeholder");
+                    if (key) {
+                        node.setAttribute("placeholder", t(key));
+                    }
+                });
+            }
+
+            function updateChartTheme() {
+                if (!state.chart) {
+                    return;
+                }
+                const isDark = state.theme === "dark";
+                const textColor = isDark ? "#e2e8f0" : "#1e293b";
+                const gridColor = isDark ? "#334155" : "#e2e8f0";
+                state.chart.options.plugins.legend.labels.color = textColor;
+                state.chart.options.scales.x.ticks.color = textColor;
+                state.chart.options.scales.x.grid.color = gridColor;
+                state.chart.options.scales.y.ticks.color = textColor;
+                state.chart.options.scales.y.grid.color = gridColor;
+                state.chart.update();
+            }
+
+            function updateChartLabels() {
+                if (!state.chart) {
+                    return;
+                }
+                state.chart.data.datasets[0].label = t("pvLabel");
+                state.chart.data.datasets[1].label = t("uvLabel");
+                state.chart.update();
+            }
+
+            function setupChart() {
+                if (typeof window.Chart === "function") {
+                    initChart();
+                    return;
+                }
+                const chartScript = document.querySelector('script[src*="chart.js"]');
+                const handler = function () {
+                    initChart();
+                };
+                if (chartScript && typeof chartScript.addEventListener === "function") {
+                    chartScript.addEventListener("load", handler, { once: true });
+                } else {
+                    window.addEventListener("load", handler, { once: true });
+                }
+            }
+
+            function initChart() {
+                if (!elements.chartCanvas) {
+                    return;
+                }
+                if (typeof window.Chart !== "function") {
+                    state.chart = null;
+                    return;
+                }
+                const ctx = elements.chartCanvas.getContext("2d");
+                if (!ctx) {
+                    state.chart = null;
+                    return;
+                }
+                if (state.chart) {
+                    state.chart.destroy();
+                }
+                state.chart = new Chart(ctx, {
+                    type: "line",
+                    data: {
+                        labels: [],
+                        datasets: [
+                            {
+                                label: t("pvLabel"),
+                                borderColor: "#3b82f6",
+                                backgroundColor: "rgba(59, 130, 246, 0.12)",
+                                borderWidth: 2,
+                                tension: 0.35,
+                                fill: true,
+                                data: []
+                            },
+                            {
+                                label: t("uvLabel"),
+                    updateChartTheme();
+                    if (state.lastSeries && state.lastSeries.length) {
+                        updateDailyChart(state.lastSeries);
+                    }
+                                borderColor: "#10b981",
+                                backgroundColor: "rgba(16, 185, 129, 0.12)",
+                                borderWidth: 2,
+                                tension: 0.35,
+                                fill: true,
+                                data: []
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                labels: {
+                                    color: state.theme === "dark" ? "#e2e8f0" : "#1e293b",
+                                    font: { size: 12 }
+                                }
+                            },
+                            tooltip: {
+                                mode: "index",
+                                intersect: false
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: {
+                                    color: state.theme === "dark" ? "#e2e8f0" : "#1e293b"
+                                },
+                                grid: {
+                                    color: state.theme === "dark" ? "#334155" : "#e2e8f0"
+                                }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    color: state.theme === "dark" ? "#e2e8f0" : "#1e293b"
+                                },
+                                grid: {
+                                    color: state.theme === "dark" ? "#334155" : "#e2e8f0"
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            function updateDailyChart(series) {
+                state.lastSeries = Array.isArray(series)
+                    ? series.map(function (item) {
+                        return { date: item.date, pv: item.pv || 0, uv: item.uv || 0 };
+                    })
+                    : [];
+                if (!state.chart) {
+                    return;
+                }
+                const labels = series.map(function (item) {
+                    const parsed = new Date(item.date);
+                    if (Number.isNaN(parsed.getTime())) {
+                        return item.date;
+                    }
+                    const month = parsed.getMonth() + 1;
+                    const day = parsed.getDate();
+                    return month + "/" + day;
+                });
+                state.chart.data.labels = labels;
+                state.chart.data.datasets[0].data = series.map(function (item) { return item.pv || 0; });
+                state.chart.data.datasets[1].data = series.map(function (item) { return item.uv || 0; });
+                state.chart.update();
+            }
+
+            function renderSiteStatus() {
+                const message = (function () {
+                    if (state.siteStatus === "loading") {
+                        return t("loading");
+                    }
+                    if (state.siteStatus === "error") {
+                        return t("loadFailed");
+                    }
+                    if (state.lastSiteTimestamp) {
+                        return t("total") + " · " + t("updatedAtPrefix") + ": " + formatUtc(state.lastSiteTimestamp);
+                    }
+                    return t("loadFailed");
+                })();
+                elements.siteNotes.forEach(function (node) {
+                    node.textContent = message;
+                });
+            }
+
+            function renderDailyStatus() {
+                if (!elements.chartUpdated) {
+                    return;
+                }
+                let detail;
+                if (state.dailyStatus === "loading") {
+                    detail = t("loading");
+                } else if (state.dailyStatus === "error") {
+                    detail = t("loadFailed");
+                } else if (state.lastDailyTimestamp) {
+                    detail = formatUtc(state.lastDailyTimestamp);
+                } else {
+                    detail = "—";
+                }
+                elements.chartUpdated.textContent = t("chartUpdatedPrefix") + ": " + detail;
+            }
+
+            function renderTopPages(pages) {
+                if (!elements.topList) {
+                    return;
+                }
+                state.topPages = Array.isArray(pages) ? pages : [];
+                if (state.topPages.length === 0) {
+                    elements.topList.innerHTML = "";
+                    if (elements.topError) {
+                        elements.topError.textContent = t("noData");
+                        elements.topError.style.display = "block";
+                    }
+                    return;
+                }
+                if (elements.topError) {
+                    elements.topError.textContent = "";
+                    elements.topError.style.display = "none";
+                }
+                const markup = state.topPages.map(function (page, index) {
+                    const rank = index + 1;
+                    const pv = formatNumber(page.pv);
+                    const uv = formatNumber(page.uv);
+                    const path = typeof page.path === "string" ? page.path : "—";
+                    return "<li class=\"page-item\">" +
+                        "<div class=\"page-rank\">" + rank + "</div>" +
+                        "<div class=\"page-info\">" +
+                            "<div class=\"page-path\">" + sanitize(path) + "</div>" +
+                            "<div class=\"page-stats\">" + pv + t("views") + " · " + uv + t("visitors") + "</div>" +
+                        "</div>" +
+                        "<div class=\"page-views\">" + pv + "</div>" +
+                    "</li>";
+                }).join("");
+                elements.topList.innerHTML = markup;
+            }
+
+            function sanitize(value) {
+                return String(value)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+            }
+
+            function formatNumber(value) {
+                const num = typeof value === "number" ? value : 0;
+                try {
+                    return new Intl.NumberFormat(state.lang).format(num);
+                } catch (_error) {
+                    return String(num);
+                }
+            }
+
+            function formatUtc(value) {
+                try {
+                    const date = typeof value === "string" ? new Date(value) : value;
+                    if (!date || Number.isNaN(date.getTime())) {
+                        return "—";
+                    }
+                    return date.toISOString().replace("T", " ").replace("Z", " UTC");
+                } catch (_error) {
+                    return "—";
+                }
+            }
+
+            function showSearchError(message) {
+                if (!elements.searchError) {
+                    return;
+                }
+                if (message) {
+                    elements.searchError.textContent = message;
+                    elements.searchError.style.display = "block";
+                } else {
+                    elements.searchError.textContent = "";
+                    elements.searchError.style.display = "none";
+                }
+            }
+
+            async function loadSiteStats() {
+                state.siteStatus = "loading";
+                renderSiteStatus();
+                try {
+                    const url = new URL("/api/stats", API_BASE);
+                    url.searchParams.set("t", Date.now().toString());
+                    const response = await fetch(url.toString());
+                    if (!response.ok) {
+                        throw new Error("HTTP " + response.status);
+                    }
+                    const data = await response.json();
+                    if (data && data.success) {
+                        const pv = data.site && typeof data.site.pv === "number" ? data.site.pv : data.page && typeof data.page.pv === "number" ? data.page.pv : 0;
+                        const uv = data.site && typeof data.site.uv === "number" ? data.site.uv : data.page && typeof data.page.uv === "number" ? data.page.uv : 0;
+                        if (elements.sitePv) {
+                            elements.sitePv.textContent = formatNumber(pv);
+                        }
+                        if (elements.siteUv) {
+                            elements.siteUv.textContent = formatNumber(uv);
+                        }
+                        state.lastSiteTimestamp = data.timestamp || new Date().toISOString();
+                        state.siteStatus = "ok";
+                    } else {
+                        state.siteStatus = "error";
+                        state.lastSiteTimestamp = null;
+                    }
+                } catch (error) {
+                    console.warn("[dashboard] stats fetch error", error);
+                    state.siteStatus = "error";
+                    state.lastSiteTimestamp = null;
+                }
+                renderSiteStatus();
+            }
+
+            async function checkHealth() {
+                if (!elements.apiStatus || !elements.apiVersion) {
+                    return;
+                }
+                try {
+                    const response = await fetch(API_BASE + "/health");
+                    if (!response.ok) {
+                        throw new Error("HTTP " + response.status);
+                    }
+                    const data = await response.json();
+                    elements.apiStatus.textContent = data.status === "ok" ? t("normal") : t("error");
+                    elements.apiVersion.textContent = data.status === "ok" && data.version
+                        ? t("version") + " " + data.version
+                        : t("cannotConnect");
+                } catch (error) {
+                    console.warn("[dashboard] health check error", error);
+                    elements.apiStatus.textContent = t("error");
+                    elements.apiVersion.textContent = t("cannotConnect");
+                }
+            }
+
+            async function loadDaily(days) {
+                const targetDays = typeof days === "number" && !Number.isNaN(days) ? days : state.currentDays;
+                state.currentDays = targetDays;
+                state.dailyStatus = "loading";
+                renderDailyStatus();
+                if (elements.todayNote) {
+                    elements.todayNote.textContent = t("loading");
+                }
+                if (elements.chartError) {
+                    elements.chartError.style.display = "none";
+                    elements.chartError.textContent = "";
+                }
+                try {
+                    const url = new URL("/api/daily", API_BASE);
+                    url.searchParams.set("days", String(targetDays));
+                    url.searchParams.set("t", Date.now().toString());
+                    const response = await fetch(url.toString());
+                    if (!response.ok) {
+                        throw new Error("HTTP " + response.status);
+                    }
+                    const data = await response.json();
+                    const hasResults = Array.isArray(data.results) && data.results.length > 0;
+                    const series = hasResults ? data.results : buildFallbackSeries(targetDays);
+                    updateDailyChart(series);
+                    const todayData = series.length > 0 ? series[series.length - 1] : { pv: 0 };
+                    if (elements.todayPv) {
+                        elements.todayPv.textContent = formatNumber(todayData.pv);
+                    }
+                    if (elements.todayNote) {
+                        elements.todayNote.textContent = t("today");
+                    }
+                    state.lastDailyTimestamp = data.timestamp || new Date().toISOString();
+                    state.dailyStatus = "ok";
+                    if (!hasResults && elements.chartError) {
+                        elements.chartError.textContent = t("noDailyData");
+                        elements.chartError.style.display = "block";
+                    }
+                } catch (error) {
+                    console.warn("[dashboard] daily fetch error", error);
+                    const fallback = buildFallbackSeries(targetDays);
+                    updateDailyChart(fallback);
+                    if (elements.todayPv) {
+                        elements.todayPv.textContent = formatNumber(0);
+                    }
+                    if (elements.todayNote) {
+                        elements.todayNote.textContent = t("today");
+                    }
+                    if (elements.chartError) {
+                        elements.chartError.textContent = t("loadFailed");
+                        elements.chartError.style.display = "block";
+                    }
+                    state.lastDailyTimestamp = null;
+                    state.dailyStatus = "error";
+                }
+                renderDailyStatus();
+            }
+
+            function buildFallbackSeries(days) {
+                return Array.from({ length: days }, function (_value, index) {
+                    const date = new Date();
+                    date.setDate(date.getDate() - (days - 1 - index));
+                    return { date: date.toISOString().split("T")[0], pv: 0, uv: 0 };
+                });
+            }
+
+            async function loadTopPages() {
+                if (elements.topLoading) {
+                    elements.topLoading.style.display = "block";
+                }
+                if (elements.topError) {
+                    elements.topError.textContent = "";
+                    elements.topError.style.display = "none";
+                }
+                try {
+                    const url = new URL("/api/top", API_BASE);
+                    url.searchParams.set("limit", "10");
+                    url.searchParams.set("t", Date.now().toString());
+                    const response = await fetch(url.toString());
+                    if (!response.ok) {
+                        throw new Error("HTTP " + response.status);
+                    }
+                    const data = await response.json();
+                    if (elements.topLoading) {
+                        elements.topLoading.style.display = "none";
+                    }
+                    if (data && data.success && Array.isArray(data.results) && data.results.length > 0) {
+                        renderTopPages(data.results);
+                    } else {
+                        renderTopPages([]);
+                    }
+                } catch (error) {
+                    console.warn("[dashboard] top pages error", error);
+                    if (elements.topLoading) {
+                        elements.topLoading.style.display = "none";
+                    }
+                    if (elements.topError) {
+                        elements.topError.textContent = t("loadError");
+                        elements.topError.style.display = "block";
+                    }
+                    renderTopPages([]);
+                }
+            }
+
+            function wireEvents() {
+                if (elements.themeToggle) {
+                    elements.themeToggle.addEventListener("click", toggleTheme);
+                }
+                if (elements.langToggle) {
+                    elements.langToggle.addEventListener("click", toggleLang);
+                }
+                if (elements.chartButtons) {
+                    elements.chartButtons.forEach(function (button) {
+                        button.addEventListener("click", function () {
+                            elements.chartButtons.forEach(function (item) {
+                                item.classList.remove("active");
+                            });
+                            button.classList.add("active");
+                            const days = parseInt(button.getAttribute("data-days"), 10);
+                            loadDaily(days);
+                        });
+                    });
+                }
+                if (elements.searchForm) {
+                    elements.searchForm.addEventListener("submit", function (event) {
+                        event.preventDefault();
+                        performSearch();
+                    });
+                }
+            }
+
+            async function performSearch() {
+                if (!elements.pathInput) {
+                    return;
+                }
+                const raw = elements.pathInput.value.trim();
+                showSearchError("");
+                if (elements.searchResult) {
+                    elements.searchResult.classList.remove("show");
+                }
+                if (!raw) {
+                    showSearchError(t("searchPlaceholderError"));
+                    return;
+                }
+                try {
+                    const url = new URL("/api/stats", API_BASE);
+                    url.searchParams.set("url", raw);
+                    url.searchParams.set("t", Date.now().toString());
+                    const response = await fetch(url.toString());
+                    if (!response.ok) {
+                        throw new Error("HTTP " + response.status);
+                    }
+                    const data = await response.json();
+                    if (!data.success) {
+                        showSearchError(data.error || t("searchNoResult"));
+                        return;
+                    }
+                    if (elements.resultPath) {
+                        elements.resultPath.textContent = data.page && data.page.path ? data.page.path : raw;
+                    }
+                    if (elements.resultPv) {
+                        elements.resultPv.textContent = formatNumber(data.page && typeof data.page.pv === "number" ? data.page.pv : 0);
+                    }
+                    if (elements.resultUv) {
+                        elements.resultUv.textContent = formatNumber(data.page && typeof data.page.uv === "number" ? data.page.uv : 0);
+                    }
+                    if (elements.searchResult) {
+                        elements.searchResult.classList.add("show");
+                    }
+                } catch (error) {
+                    console.warn("[dashboard] search error", error);
+                    showSearchError(t("loadFailed"));
+                }
+            }
+
+            async function loadLogo() {
+                if (!elements.logo) {
+                    return;
+                }
+                try {
+                    const response = await fetch(API_BASE + "/logo.webp");
+                    if (!response.ok) {
+                        return;
+                    }
+                    const blob = await response.blob();
+                    const objectUrl = URL.createObjectURL(blob);
+                    elements.logo.src = objectUrl;
+                } catch (_error) {
+                    // ignore logo load failures
+                }
+            }
+
+            document.addEventListener("DOMContentLoaded", function () {
+                setTheme(state.theme);
+                setLang(state.lang);
+                applyTranslations();
+                updateThemeButton();
+                updateLangButton();
+                setupChart();
+                wireEvents();
+                loadLogo();
+                loadSiteStats();
+                checkHealth();
+                loadDaily(state.currentDays);
+                loadTopPages();
             });
-            dailyChart.data.labels = labels;
-            dailyChart.data.datasets[0].data = series.map((item) => item.pv || 0);
-            dailyChart.data.datasets[1].data = series.map((item) => item.uv || 0);
-            dailyChart.update();
-        }
-        document.querySelectorAll('.chart-controls button').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.chart-controls button').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active'); const days = parseInt(btn.getAttribute('data-days'));
-                currentDays = days; loadDailyChart(days);
-            });
-        });
-        async function searchPage() {
-            const path = document.getElementById('path-input').value.trim();
-            const resultDiv = document.getElementById('search-result'), errorDiv = document.getElementById('search-error');
-            errorDiv.innerHTML = ''; resultDiv.classList.remove('show');
-            if (!path) { errorDiv.innerHTML = \`<div class="error">\${i18n[currentLang].searchPlaceholder}</div>\`; return; }
-            try {
-                const res = await fetch(\`\${API_BASE}/api/stats?url=\${encodeURIComponent(path)}\`), data = await res.json();
-                if (data.success) {
-                    document.getElementById('result-path').textContent = data.page?.path || path;
-                    document.getElementById('result-pv').textContent = formatNumber(data.page?.pv || 0);
-                    document.getElementById('result-uv').textContent = formatNumber(data.page?.uv || 0);
-                    resultDiv.classList.add('show');
-                } else { errorDiv.innerHTML = \`<div class="error">\${data.error || i18n[currentLang].loadFailed}</div>\`; }
-            } catch (err) { errorDiv.innerHTML = \`<div class="error">\${i18n[currentLang].loadFailed}</div>\`; }
-        }
-        async function loadTopPages() {
-            const loadingDiv = document.getElementById('top-loading'), listEl = document.getElementById('top-list'), errorDiv = document.getElementById('top-error');
-            try {
-                const topUrl = new URL('/api/top', API_BASE);
-                topUrl.searchParams.set('limit', '10');
-                topUrl.searchParams.set('t', Date.now().toString());
-                const res = await fetch(topUrl.toString()), data = await res.json();
-                loadingDiv.style.display = 'none';
-                if (data.success && data.results && data.results.length > 0) {
-                    listEl.innerHTML = data.results.map((page, index) => \`
-                        <li class="page-item">
-                            <div class="page-rank">\${index + 1}</div>
-                            <div class="page-info">
-                                <div class="page-path">\${page.path}</div>
-                                <div class="page-stats">\${formatNumber(page.pv)}\${i18n[currentLang].views} · \${formatNumber(page.uv)}\${i18n[currentLang].visitors}</div>
-                            </div>
-                            <div class="page-views">\${formatNumber(page.pv)}</div>
-                        </li>
-                    \`).join('');
-                } else { loadingDiv.style.display = 'none'; errorDiv.innerHTML = \`<div class="error">\${i18n[currentLang].noData}</div>\`; }
-            } catch (err) { loadingDiv.style.display = 'none'; errorDiv.innerHTML = \`<div class="error">\${i18n[currentLang].loadError}</div>\`; }
-        }
-        function formatNumber(num) { return new Intl.NumberFormat(currentLang).format(num); }
-        // 嘗試載入真實 logo
-        fetch(\`\${API_BASE}/logo.webp\`).then(res => { if (res.ok) return res.blob(); }).then(blob => {
-            if (blob) document.getElementById('logo-img').src = URL.createObjectURL(blob);
-        }).catch(() => {});
-        document.addEventListener('DOMContentLoaded', () => {
-            loadSiteStats(); checkHealth(); loadTopPages(); initChart(); loadDailyChart(currentDays);
-            document.getElementById('search-btn').addEventListener('click', searchPage);
-            document.getElementById('path-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') searchPage(); });
-        });
+        })();
     </script>
 </body>
 </html>`;
