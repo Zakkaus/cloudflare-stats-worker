@@ -19,6 +19,14 @@ Perfect alternative to Google Analytics for static sites (Hugo, Hexo, Jekyll, Vu
 - **📊 Real-time**: Live PV/UV updates, batch query support
 - **🛡️ Anti-abuse**: Built-in rate limiting (120 req/60sec per IP)
 - **🌐 i18n Ready**: Auto-merge paths like `/zh-tw/posts/` → `/posts/`
+- **📈 Dashboard**: Built-in web dashboard for viewing statistics
+
+---
+
+## 🎯 Live Demo
+
+- **API Endpoint**: https://cloudflare-stats-worker.zakkauu.workers.dev
+- **Dashboard**: https://stats.zakk.au (View real-time statistics)
 
 ---
 
@@ -237,7 +245,13 @@ Add to your page template:
 
 **Calculation**:
 - Workers: $5/month base + $0.50/million requests beyond 10M
-- KV: $0.50/million reads, $5/million writes
+- **KV Storage (included in Paid plan)**:
+  - ✅ 10M read operations/month
+  - ✅ 1M write operations/month
+  - ✅ 1M delete operations/month
+  - ✅ 1M list operations/month
+  - ✅ 1 GB stored data
+  - Beyond limits: $0.50/million reads, $5/million writes
 - D1: $0.36/million reads (first 25M free)
 
 **vs Google Analytics**: Free but requires cookie consent banners + GDPR compliance headaches.
@@ -275,6 +289,48 @@ Run:
 wrangler d1 execute cloudflare-stats-top --file=schema.sql
 wrangler deploy
 ```
+
+### Deploy Dashboard (Cloudflare Pages)
+
+The built-in web dashboard allows you to view statistics in a beautiful UI.
+
+**Option 1: Cloudflare Pages (Recommended)**
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → Pages
+2. Create a new project → Connect to Git
+3. Select this repository
+4. Build settings:
+   - Build command: *(leave empty)*
+   - Build output directory: `dashboard`
+5. Deploy!
+6. (Optional) Set custom domain like `stats.yourdomain.com`
+
+**Option 2: Manual Deploy**
+
+```bash
+# Install Wrangler if not already
+npm install -g wrangler
+
+# Navigate to dashboard directory
+cd dashboard
+
+# Deploy to Pages
+wrangler pages deploy . --project-name=stats-dashboard
+```
+
+**Update API URL**
+
+Edit `dashboard/index.html` line 335:
+```javascript
+const API_BASE = 'https://your-worker-url.workers.dev';
+```
+
+**Features**:
+- 📊 Real-time site statistics (PV/UV)
+- 🔍 Search individual page stats
+- 🔥 Top 10 popular pages (requires D1)
+- 📱 Responsive design
+- 🌙 Dark mode
 
 ---
 
