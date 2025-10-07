@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-TW" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>統計數據 - Cloudflare Stats</title>
     <meta name="description" content="查看網站訪問統計數據">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -12,15 +13,32 @@
             box-sizing: border-box;
         }
 
-        :root {
-            --primary: #f38020;
-            --bg: #0f0f0f;
-            --card-bg: #1a1a1a;
-            --text: #e0e0e0;
-            --text-muted: #a0a0a0;
-            --border: #333;
+        :root[data-theme="light"] {
+            --primary: #2563eb;
+            --primary-light: #3b82f6;
+            --primary-dark: #1d4ed8;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
             --success: #10b981;
             --error: #ef4444;
+            --shadow: rgba(0, 0, 0, 0.1);
+        }
+
+        :root[data-theme="dark"] {
+            --primary: #3b82f6;
+            --primary-light: #60a5fa;
+            --primary-dark: #2563eb;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --success: #10b981;
+            --error: #ef4444;
+            --shadow: rgba(0, 0, 0, 0.3);
         }
 
         body {
@@ -29,24 +47,33 @@
             color: var(--text);
             line-height: 1.6;
             padding: 20px;
+            transition: background-color 0.3s, color 0.3s;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
         header {
-            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 40px;
             padding: 30px 0;
             border-bottom: 2px solid var(--border);
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header-left {
+            flex: 1;
         }
 
         h1 {
             font-size: 2.5rem;
             margin-bottom: 10px;
-            background: linear-gradient(135deg, var(--primary) 0%, #f59f0b 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -55,6 +82,26 @@
         .subtitle {
             color: var(--text-muted);
             font-size: 1.1rem;
+        }
+
+        .theme-toggle {
+            padding: 12px 20px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .theme-toggle:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
         }
 
         .stats-grid {
@@ -70,11 +117,12 @@
             border-radius: 12px;
             padding: 24px;
             transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 1px 3px var(--shadow);
         }
 
         .stat-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 20px rgba(243, 128, 32, 0.1);
+            box-shadow: 0 4px 20px var(--shadow);
         }
 
         .stat-label {
@@ -97,12 +145,62 @@
             color: var(--success);
         }
 
+        .chart-section {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 1px 3px var(--shadow);
+        }
+
+        .chart-section h2 {
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            color: var(--text);
+        }
+
+        .chart-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .chart-controls button {
+            padding: 8px 16px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .chart-controls button:hover,
+        .chart-controls button.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+        }
+
         .search-section {
             background: var(--card-bg);
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 30px;
             margin-bottom: 30px;
+            box-shadow: 0 1px 3px var(--shadow);
+        }
+
+        .search-section h2 {
+            margin-bottom: 20px;
+            font-size: 1.5rem;
         }
 
         .search-box {
@@ -119,6 +217,7 @@
             border-radius: 8px;
             color: var(--text);
             font-size: 1rem;
+            transition: border-color 0.2s;
         }
 
         input[type="text"]:focus {
@@ -139,7 +238,7 @@
         }
 
         button:hover {
-            background: #e67316;
+            background: var(--primary-dark);
         }
 
         button:disabled {
@@ -200,6 +299,7 @@
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 30px;
+            box-shadow: 0 1px 3px var(--shadow);
         }
 
         .top-pages h2 {
@@ -312,6 +412,11 @@
                 font-size: 2rem;
             }
             
+            header {
+                flex-direction: column;
+                text-align: center;
+            }
+
             .stats-grid {
                 grid-template-columns: 1fr;
             }
@@ -320,14 +425,24 @@
                 flex-direction: column;
                 gap: 16px;
             }
+
+            .chart-container {
+                height: 300px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>📊 統計數據儀表板</h1>
-            <p class="subtitle">實時查看網站訪問統計</p>
+            <div class="header-left">
+                <h1>📊 統計數據儀表板</h1>
+                <p class="subtitle">實時查看網站訪問統計</p>
+            </div>
+            <button class="theme-toggle" id="theme-toggle">
+                <span id="theme-icon">🌙</span>
+                <span id="theme-text">深色模式</span>
+            </button>
         </header>
 
         <div class="stats-grid">
@@ -342,9 +457,26 @@
                 <div class="stat-change">載入中...</div>
             </div>
             <div class="stat-card">
+                <div class="stat-label">今日瀏覽量</div>
+                <div class="stat-value" id="today-pv">-</div>
+                <div class="stat-change">載入中...</div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-label">API 狀態</div>
                 <div class="stat-value" id="api-status">-</div>
                 <div class="stat-change" id="api-version">-</div>
+            </div>
+        </div>
+
+        <div class="chart-section">
+            <h2>📈 每日訪問趨勢</h2>
+            <div class="chart-controls">
+                <button class="active" data-days="7">過去 7 天</button>
+                <button data-days="14">過去 14 天</button>
+                <button data-days="30">過去 30 天</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="dailyChart"></canvas>
             </div>
         </div>
 
@@ -398,7 +530,43 @@
     </div>
 
     <script>
-        const API_BASE = 'https://cloudflare-stats-worker.zakkauu.workers.dev';
+        const API_BASE = window.location.origin; // 使用相同域名的 API
+        let dailyChart = null;
+        let currentDays = 7;
+
+        // 主題切換
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        const themeText = document.getElementById('theme-text');
+        const html = document.documentElement;
+
+        // 從 localStorage 讀取主題設定
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        html.setAttribute('data-theme', savedTheme);
+        updateThemeButton(savedTheme);
+
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeButton(newTheme);
+            
+            // 更新圖表主題
+            if (dailyChart) {
+                updateChartTheme();
+            }
+        });
+
+        function updateThemeButton(theme) {
+            if (theme === 'dark') {
+                themeIcon.textContent = '🌙';
+                themeText.textContent = '深色模式';
+            } else {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = '淺色模式';
+            }
+        }
 
         // 載入全站統計
         async function loadSiteStats() {
@@ -434,6 +602,144 @@
                 document.getElementById('api-version').textContent = '無法連接';
             }
         }
+
+        // 生成模擬的每日數據（實際應該從 KV 或 D1 獲取）
+        function generateDailyData(days) {
+            const data = [];
+            const now = new Date();
+            
+            for (let i = days - 1; i >= 0; i--) {
+                const date = new Date(now);
+                date.setDate(date.getDate() - i);
+                
+                // 模擬數據 - 實際應該從 API 獲取
+                const pv = Math.floor(Math.random() * 500) + 200;
+                const uv = Math.floor(pv * (0.3 + Math.random() * 0.2));
+                
+                data.push({
+                    date: date.toISOString().split('T')[0],
+                    pv: pv,
+                    uv: uv
+                });
+            }
+            
+            return data;
+        }
+
+        // 初始化圖表
+        function initChart(days = 7) {
+            const ctx = document.getElementById('dailyChart').getContext('2d');
+            const data = generateDailyData(days);
+            
+            const theme = html.getAttribute('data-theme');
+            const isDark = theme === 'dark';
+            const textColor = isDark ? '#e2e8f0' : '#1e293b';
+            const gridColor = isDark ? '#334155' : '#e2e8f0';
+            
+            if (dailyChart) {
+                dailyChart.destroy();
+            }
+            
+            dailyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => {
+                        const date = new Date(d.date);
+                        return `${date.getMonth() + 1}/${date.getDate()}`;
+                    }),
+                    datasets: [
+                        {
+                            label: '瀏覽量 (PV)',
+                            data: data.map(d => d.pv),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: '訪客數 (UV)',
+                            data: data.map(d => d.uv),
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: textColor,
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: textColor
+                            },
+                            grid: {
+                                color: gridColor
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: textColor
+                            },
+                            grid: {
+                                color: gridColor
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 計算今日數據
+            const todayData = data[data.length - 1];
+            document.getElementById('today-pv').textContent = formatNumber(todayData.pv);
+            document.querySelector('#today-pv').nextElementSibling.textContent = '今日';
+        }
+
+        function updateChartTheme() {
+            if (!dailyChart) return;
+            
+            const theme = html.getAttribute('data-theme');
+            const isDark = theme === 'dark';
+            const textColor = isDark ? '#e2e8f0' : '#1e293b';
+            const gridColor = isDark ? '#334155' : '#e2e8f0';
+            
+            dailyChart.options.plugins.legend.labels.color = textColor;
+            dailyChart.options.scales.y.ticks.color = textColor;
+            dailyChart.options.scales.y.grid.color = gridColor;
+            dailyChart.options.scales.x.ticks.color = textColor;
+            dailyChart.options.scales.x.grid.color = gridColor;
+            
+            dailyChart.update();
+        }
+
+        // 圖表時間範圍切換
+        document.querySelectorAll('.chart-controls button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.chart-controls button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const days = parseInt(btn.getAttribute('data-days'));
+                currentDays = days;
+                initChart(days);
+            });
+        });
 
         // 查詢單頁統計
         async function searchPage() {
@@ -511,6 +817,7 @@
             loadSiteStats();
             checkHealth();
             loadTopPages();
+            initChart(currentDays);
 
             document.getElementById('search-btn').addEventListener('click', searchPage);
             document.getElementById('path-input').addEventListener('keypress', (e) => {

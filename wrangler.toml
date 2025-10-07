@@ -10,7 +10,7 @@ preview_id = "89eadc7ef04244c3834c1b97f326b075"
 
 # Optional: D1 database for /api/top endpoint
 # Create with: wrangler d1 create cloudflare-stats-top
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "cloudflare-stats-top"
-# database_id = "YOUR_D1_DATABASE_ID"
+[[d1_databases]]
+binding = "DB"
+database_name = "cloudflare-stats-top"
+database_id = "61645b6f-91cd-4716-bbd0-8b15ca2efdec"
