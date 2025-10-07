@@ -1,0 +1,16 @@
+name = "cloudflare-stats-worker"
+main = "src/index.js"
+compatibility_date = "2025-10-07"
+
+# KV namespace for page stats (created with: wrangler kv namespace create PAGE_STATS)
+[[kv_namespaces]]
+binding = "PAGE_STATS"
+id = "89eadc7ef04244c3834c1b97f326b075"
+preview_id = "89eadc7ef04244c3834c1b97f326b075"
+
+# Optional: D1 database for /api/top endpoint
+# Create with: wrangler d1 create cloudflare-stats-top
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "cloudflare-stats-top"
+# database_id = "YOUR_D1_DATABASE_ID"

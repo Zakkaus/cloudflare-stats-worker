@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS page_stats (
+  path TEXT PRIMARY KEY,
+  pv INTEGER NOT NULL DEFAULT 0,
+  uv INTEGER NOT NULL DEFAULT 0,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_page_stats_pv ON page_stats(pv DESC);
+CREATE INDEX IF NOT EXISTS idx_page_stats_updated ON page_stats(updated_at DESC);
