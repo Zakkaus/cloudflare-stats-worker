@@ -391,7 +391,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             .page-views { justify-self: flex-start; }
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-Nb9nMcJ0xXL9sc8Cjylr3rFWysFNOlTR7ANJ0lV7VqvJSAJaR7HhuJui9n1NsRGd" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
 </head>
 <body>
     <div class="page">
@@ -807,10 +807,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             },
                             {
                                 label: t("uvLabel"),
-                    updateChartTheme();
-                    if (state.lastSeries && state.lastSeries.length) {
-                        updateDailyChart(state.lastSeries);
-                    }
                                 borderColor: "#10b981",
                                 backgroundColor: "rgba(16, 185, 129, 0.12)",
                                 borderWidth: 2,
@@ -857,6 +853,10 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         }
                     }
                 });
+                updateChartTheme();
+                if (state.lastSeries && state.lastSeries.length) {
+                    updateDailyChart(state.lastSeries);
+                }
             }
 
             function updateDailyChart(series) {
