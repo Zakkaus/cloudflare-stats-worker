@@ -21,7 +21,8 @@
 - **🎨 雙主題**：支持淺色與深色模式手動切換
 - **📉 圖表視覺化**：使用 Chart.js 展示每日 PV/UV 趨勢
 - **🆕 v1.6.0 新 UI**：玻璃擬態卡片、健康檢查、UTC 更新提示與繁中/英文即時切換
-- **🔄 全站統計一致**：`/api/stats`（無 `url` 參數）同時供 timeline 與儀表板使用，避免首頁 UV 偏低。
+- **� 自動回填機制**：`/api/top` 會在 D1 為空時從 KV 重新同步，加上官方清除流程避免殘留數據。
+- **�🔄 全站統計一致**：`/api/stats`（無 `url` 參數）同時供 timeline 與儀表板使用，避免首頁 UV 偏低。
 - **⏱️ UTC 刷新提示**：儀表板卡片與趨勢圖顯示「更新於 (UTC)」，方便確認最新數據時間。
 - **🔔 狀態提示**：儀表板卡片會顯示載入/錯誤狀態，並同步顯示最後一次成功更新的 UTC 時戳。
 
@@ -164,304 +165,253 @@ curl "https://stats.yourdomain.com/api/count?url=/posts/hello-world/"
 curl "https://stats.yourdomain.com/api/batch?urls=/,/about/,/posts/example/"
 ```
 
-#### 熱門文章（需 D1）
+# Cloudflare Stats Worker
+
+[![Version](https://img.shields.io/badge/version-1.6.0-brightgreen.svg)](https://github.com/Zakkaus/cloudflare-stats-worker/releases)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Zakkaus/cloudflare-stats-worker)
+
+🚀 **輕量級觸發式統計系統** — 基於 Cloudflare Workers + KV + D1，兼顧隱私、成本與部署速度。本文提供完整安裝指南、儀表板亮點與 Blowfish 整合做法。
+
+---
+
+## 目錄
+
+- [為什麼選擇 Cloudflare Stats Worker](#為什麼選擇-cloudflare-stats-worker)
+- [免費額度與升級選項](#免費額度與升級選項)
+- [架構與資料流](#架構與資料流)
+- [儀表板亮點](#儀表板亮點)
+- [部署前準備](#部署前準備)
+- [步驟 1：取得專案原始碼](#步驟-1取得專案原始碼)
+- [步驟 2：執行安裝腳本](#步驟-2執行安裝腳本)
+- [步驟 3：驗證-api](#步驟-3驗證-api)
+- [步驟 4：匯入-hugo-前端腳本](#步驟-4匯入-hugo-前端腳本)
+- [步驟 5：覆寫-blowfish-模板](#步驟-5覆寫-blowfish-模板)
+- [步驟 6：本地測試](#步驟-6本地測試)
+- [步驟 7：建立統計儀表板頁面](#步驟-7建立統計儀表板頁面)
+- [API 端點快速索引](#api-端點快速索引)
+- [維運筆記](#維運筆記)
+- [常見問題](#常見問題)
+
+---
+
+## 為什麼選擇 Cloudflare Stats Worker
+
+- **單一 Worker 全部搞定**：API、儀表板、快取失效與 D1 同步打包在一起。
+- **隱私友善**：無 Cookie，IP 以 SHA-256 雜湊截斷，資料完全掌握在自己手中。
+- **多語言友善**：`normalizePath()` 自動把 `/zh-tw/posts/foo/`、`/posts/foo/` 視為同一頁。
+- **部署秒上線**：`wrangler deploy` 一鍵推送，支援自訂網域。
+- **Hugo Blowfish 專用腳本**：官方 partial 範例確保 slug 一致，無需額外 CSS。
+
+## 免費額度與升級選項
+
+| 服務 | 免費方案 | 付費方案重點 |
+|------|----------|---------------|
+| **Cloudflare Workers** | 每日 100k 請求、10ms CPU | Workers Paid $5/月：10M 請求、額外 CPU 配額、優先排程 |
+| **Cloudflare KV** | 1GB 儲存、每日 100k 讀取 / 1k 寫入 | Workers Paid 內含 10M 讀取/1M 寫入，上限外依次數計費 |
+| **Cloudflare D1** | 每月 5M 查詢、1GB 儲存 | D1 Paid 依查詢量計價，適合大流量排行或長期報表 |
+
+> 小提醒：若只需要即時 PV/UV 計數，可僅使用 KV，D1 功能為選配。
+
+## 架構與資料流
+
+```mermaid
+graph LR
+  User[訪客] -->|/api/count| Worker
+  User -->|/api/batch| Worker
+  Dashboard[stats 子網域儀表板] -->|/api/stats /api/daily /api/top| Worker
+  Worker -->|寫入/讀取| KV[(Cloudflare KV)]
+  Worker -->|可選| D1[(Cloudflare D1)]
+```
+
+- 每個 API 回傳 JSON 並攜帶寬鬆 CORS (`Access-Control-Allow-Origin: *`)。
+- 當 `/api/top` 偵測到 D1 為空，會自動從 KV 回填熱門排行，確保儀表板不中斷。
+- 所有統計皆以 `page:/posts/foo/:pv`、`:uv` 命名，避免語系差異造成分裂。
+
+## 儀表板亮點
+
+- 深 / 淺色主題切換、繁中 / 英文介面、一鍵跳轉文章。
+- 今日 / 全站 PV・UV 卡片 + API 健康狀態。
+- 7、14、30 日 Chart.js 趨勢圖，零資料時自動顯示空狀態。
+- 熱門頁面 Top 10、快速搜尋任意 path、顯示 UTC 更新時間。
+- 可嵌入 Hugo 頁面或 iframe，維持與主站一致的體驗。
+
+## 部署前準備
+
+- Cloudflare 帳號 + Wrangler CLI（`npm install -g wrangler`）。
+- Node.js 18 以上版本。
+- Git 與 shell 環境（macOS、Linux、WSL 皆可）。
+- 若要綁定 `stats.example.com`，請先在 Cloudflare 設定該網域代理。
+
+---
+
+## 步驟 1：取得專案原始碼
+
 ```bash
-curl "https://stats.yourdomain.com/api/top?limit=10"
+git clone https://github.com/Zakkaus/cloudflare-stats-worker.git
+cd cloudflare-stats-worker
 ```
 
-```json
-{
-  "success": true,
-  "top": [
-    { "path": "/posts/popular-post/", "pv": 9876, "uv": 543 },
-    { "path": "/posts/another-post/", "pv": 5432, "uv": 321 }
-  ],
-  "timestamp": "2025-10-07T12:34:56.789Z"
-}
-```
+專案重點：
 
----
+- `src/index.js`：Worker 路由、快取失效、D1 同步等核心邏輯。
+- `dashboard/`：儀表板靜態資源，部署時自動隨 Worker 一起推送。
+- `scripts/`：一鍵部署與驗證腳本。
+- `schema.sql`：D1 所需資料表定義。
 
-## 🎨 前端整合
+## 步驟 2：執行安裝腳本
 
-### Hugo Blowfish 主題
-
-1. **啟用閱讀量顯示**（`config/_default/params.toml`）：
-```toml
-[article]
-  showViews = true
-
-[list]
-  showViews = true
-```
-
-2. **添加統計腳本**（`layouts/partials/extend-head.html`）：
-```html
-{{- $statsJs := resources.Get "js/cloudflare-stats.js" | minify | fingerprint -}}
-<script src="{{ $statsJs.RelPermalink }}" defer></script>
-```
-
-3. **創建 JS 文件**（`assets/js/cloudflare-stats.js`）：
-```javascript
-(function () {
-  const API_BASE = "https://stats.yourdomain.com"; // 改成你的 Worker URL
-
-  document.addEventListener("DOMContentLoaded", function() {
-    // 掃描所有 views_ 開頭的元素
-    const viewNodes = document.querySelectorAll("span[id^='views_']");
-    
-    viewNodes.forEach(async (node) => {
-      const path = parsePathFromId(node.id);
-      if (!path) return;
-      
-      try {
-        const res = await fetch(`${API_BASE}/api/count?url=${path}`);
-        const data = await res.json();
-        if (data.success) {
-          node.textContent = data.page.pv || 0;
-          node.classList.remove("animate-pulse", "text-transparent");
-        }
-      } catch (err) {
-        console.warn("Stats error:", err);
-        node.textContent = "—";
-      }
-    });
-  });
-
-  function parsePathFromId(id) {
-    // views_posts/example/index.md → /posts/example/
-    let path = id.replace(/^views_/, "");
-    path = path.replace(/\.md$/i, "");
-    path = path.replace(/\/index$/i, "/");
-    if (!path.startsWith("/")) path = "/" + path;
-    return path;
-  }
-})();
-```
-
-### 其他靜態網站生成器
-
-只需在頁面中插入：
-```html
-<span id="views_current_page">0</span>
-```
-
-然後用 JavaScript 調用 `/api/count` 更新數字。
-
----
-
-## 💰 成本估算
-
-### Cloudflare Workers 免費方案
-- ✅ 每天 100,000 次請求
-- ✅ 10ms CPU 時間/請求
-- ✅ 適合個人博客和中小型網站
-
-### 超出免費額度（Workers Paid: $5/月）
-| 每月請求量 | KV 讀取 | KV 寫入 | D1 讀取 | 總成本 |
-|-----------|---------|---------|---------|--------|
-| 300 萬 | 300 萬 | 10 萬 | 10 萬 | ~$5.60 |
-| 1000 萬 | 1000 萬 | 30 萬 | 30 萬 | ~$7.50 |
-
-**計算說明**：
-- Workers: $5/月基礎 + 超過 1000 萬請求每百萬 $0.50
-- **KV 存儲（Paid 方案包含）**:
-  - ✅ 1000 萬次讀取操作/月
-  - ✅ 100 萬次寫入操作/月
-  - ✅ 100 萬次刪除操作/月
-  - ✅ 100 萬次列表操作/月
-  - ✅ 1 GB 儲存資料
-  - 超出限制: 讀取 $0.50/百萬次，寫入 $5/百萬次
-- D1: 每百萬次讀取 $0.36（前 2500 萬免費）
-
-**對比 Google Analytics**: 完全免費 vs. GA 收集大量隱私數據
-
----
-
-## 🔧 進階配置
-
-### 自訂域名綁定
-
-1. 進入 Cloudflare Dashboard
-2. Workers & Pages → 你的 Worker → Settings → Triggers
-3. Custom Domains → Add Custom Domain
-4. 輸入 `stats.yourdomain.com`
-5. DNS 會自動配置
-
-### 啟用 D1 熱門排行
-
-編輯 `wrangler.toml` 取消註解：
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "cloudflare-stats-top"
-database_id = "你的 D1 ID"
-```
-
-執行：
 ```bash
-wrangler d1 execute cloudflare-stats-top --file=schema.sql
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh --domain stats.example.com
+```
+
+腳本流程：
+
+1. 檢查 Wrangler 是否登入（必要時跳出提示）。
+2. 建立 KV 命名空間並寫回 `wrangler.toml`。
+3. 若偵測到 D1 ID，會自動套用 `schema.sql`。
+4. 部署 Worker 並輸出 dashboard / API URL。
+
+想手動部署可依序執行：
+
+```bash
+wrangler kv namespace create PAGE_STATS
+wrangler kv namespace create PAGE_STATS --preview
+wrangler d1 create cloudflare-stats-top             # 選配
+wrangler d1 execute cloudflare-stats-top --file=schema.sql --remote
 wrangler deploy
 ```
 
----
+## 步驟 3：驗證 API
 
-## 📊 使用數據儀表板
-
-Worker 包含一個 **內建的網頁儀表板**，位於根路徑（`/`）。部署後，直接訪問 Worker URL：
-
-```
-https://cloudflare-stats-worker.your-subdomain.workers.dev/
-# 或使用自訂域名：
-https://stats.yourdomain.com/
+```bash
+curl https://stats.example.com/health
+curl "https://stats.example.com/api/count?url=/" | jq
+curl "https://stats.example.com/api/stats" | jq
+curl "https://stats.example.com/api/top?limit=5" | jq
 ```
 
-### 儀表板功能
+或使用專案提供的驗證腳本一次檢查所有端點：
 
-**📈 每日趨勢圖表**
-- 視覺化 PV/UV 趨勢（7/14/30 天）
-- 互動式 Chart.js 圖表
-- 響應式設計，支持所有設備
-
-**🎨 主題自訂**
-- 🌙 **深色模式**（預設）：舒適的藍色配色
-- ☀️ **淺色模式**：清爽的白色介面
-- 頂部手動切換按鈕
-- 使用 localStorage 保存偏好
-
-**📊 統計卡片**
-- 全站總 PV/UV
-- 今日 PV 統計
-- API 健康狀態
-
-**🔍 頁面搜尋**
-- 查詢任意頁面路徑
-- 實時顯示 PV/UV
-- 支持標準化路徑
-
-**🔥 熱門頁面**
-- Top 10 最多瀏覽頁面
-- 需要 D1 數據庫（可選）
-
-### 自訂域名設定
-
-要使用像 `stats.zakk.au` 這樣的自訂域名：
-
-1. **Cloudflare Dashboard** → Workers & Pages → 你的 Worker
-2. **Settings** → **Triggers** → **Custom Domains**
-3. 點擊 **Add Custom Domain**
-4. 輸入你的域名（例如：`stats.zakk.au`）
-5. DNS 記錄將自動配置 ✅
-
-**注意**：儀表板和 API 共用同一域名：
-- `https://stats.zakk.au/` → 儀表板
-- `https://stats.zakk.au/api/*` → API 端點
-
----
-
-### 調整速率限制
-
-編輯 `src/index.js`：
-```javascript
-const RATE_LIMIT_WINDOW = 60; // 60 秒
-const RATE_LIMIT_MAX = 120;   // 120 次請求
+```bash
+./scripts/verify.sh https://stats.example.com
 ```
 
----
+## 步驟 4：匯入 Hugo 前端腳本
 
-## 🛠️ 開發與測試
+1. 將 `client/cloudflare-stats.js` 複製到你的 Hugo 專案，例如 `assets/js/cloudflare-stats.js`。
+2. 在 `layouts/partials/extend-head.html` 新增：
+   ```go-html-template
+   {{ $stats := resources.Get "js/cloudflare-stats.js" | resources.Minify | resources.Fingerprint }}
+   <script defer src="{{ $stats.RelPermalink }}"
+           data-api="https://stats.example.com"
+           data-site="https://zakk.au"></script>
+   ```
+3. 重新編譯 Hugo，確認文章頁腳的 PV 佔位符有載入動畫。
 
-### 本地測試
+## 步驟 5：覆寫 Blowfish 模板
+
+為確保多語言路徑共用同一鍵值，建議覆寫：
+
+- `layouts/_default/list.html`
+- `layouts/_default/single.html`
+- `layouts/partials/meta/views.html`
+- `layouts/partials/meta/likes.html`
+
+核心邏輯為建立統一的 slug：
+
+```go-html-template
+{{- $path := partial "stats/normalize-path" . -}}
+<span id="views_{{ $path }}" class="stats-views animate-pulse">—</span>
+```
+
+`partial "stats/normalize-path"` 可去除 `/index`、語系前綴，確保計數集中。
+
+## 步驟 6：本地測試
+
 ```bash
 wrangler dev
+# 另開終端
+hugo server -D
 ```
 
-訪問 `http://localhost:8787/health`
+- 透過 `http://127.0.0.1:8787/api/count?url=/` 測試計數。
+- 在文章頁的網路面板確認 `/api/batch`、`/api/count` 正常回應。
+- 想壓測可用 `npx autocannon` 或 `hey` 打 `/api/count`，觀察速率限制行為。
 
-### 健康檢查
+## 步驟 7：建立統計儀表板頁面
+
+在 Hugo Markdown 中嵌入短碼：
+
+```markdown
+{{< statsDashboard url="https://stats.example.com" heightClass="h-[1200px]" >}}
+```
+
+- 短碼來源：`layouts/shortcodes/statsDashboard.html`。
+- 支援自訂高度、深色模式樣式，並可在 `content/stats/index.*.md` 中使用。
+- 若想完全客製，可直接將 `dashboard/` 內容搬到 Hugo partial。
+
+---
+
+## API 端點快速索引
+
+| 方法 | 路徑 | 說明 | 寫入 | 預設快取 |
+|------|------|------|------|----------|
+| `GET` | `/api/count?url=/path/` | 遞增 PV/UV 並回傳頁面與站台數據 | ✅ | ❌ |
+| `GET` | `/api/stats?url=/path/` | 單頁統計查詢 | ❌ | ✅ (30s) |
+| `GET` | `/api/stats` | 全站統計查詢 | ❌ | ✅ (30s) |
+| `GET` | `/api/batch?urls=/,/about/` | 批量查詢（最多 50 個路徑） | ❌ | ✅ (30s) |
+| `GET` | `/api/top?limit=10` | 熱門頁面排行（需 D1） | ❌ | ✅ (60s) |
+| `GET` | `/api/daily?days=7` | 每日 PV/UV 時序（需 D1） | ❌ | ✅ (30s) |
+| `GET` | `/health` | Worker 狀態、版本號 | ❌ | ❌ |
+
+所有回應皆包含 UTC `timestamp`，方便前端顯示「最後更新於」資訊。
+
+## 維運筆記
+
+### 全站清除統計（KV + D1)
+
+> 由於 `/api/top` 會在 D1 為空時自動從 KV 回填，**務必先清空 KV，再刪除 D1**。
+
 ```bash
-chmod +x scripts/verify.sh
-./scripts/verify.sh https://stats.yourdomain.com
+# 1. 刪除 KV 正式環境全部鍵
+wrangler kv key list --binding=PAGE_STATS --preview false --remote \
+  | jq -r '.[].name' \
+  | xargs -I{} wrangler kv key delete "{}" --binding=PAGE_STATS --preview false --remote
+
+# 2. 清除 D1 資料
+wrangler d1 execute cloudflare-stats-top --command "DELETE FROM page_stats;" --remote
+wrangler d1 execute cloudflare-stats-top --command "DELETE FROM site_daily_stats;" --remote
+
+# 3. 驗證是否為空
+wrangler kv key list --binding=PAGE_STATS --preview false --remote
+wrangler d1 execute cloudflare-stats-top --command "SELECT COUNT(*) AS count FROM page_stats;" --remote
+curl -s https://stats.example.com/api/top?limit=5
 ```
 
-### 查看日誌
-```bash
-wrangler tail
-```
+### `/api/top` 仍顯示舊資料怎麼辦？
+
+- 確認 KV 是否還有 `page:*` 鍵存在。
+- Cloudflare Cache 預設 60 秒，可稍候或造訪 `/health` 觸發快取失效。
+- 檢查是否有其他節點（例如 `wrangler dev`）仍在寫入。
+
+## 常見問題
+
+**Q：為什麼不用 Google Analytics？**  
+A：自架方案隱私透明、可在中國直接使用，且對靜態站性能影響低。
+
+**Q：前端腳本會拖慢載入嗎？**  
+A：腳本以 `defer` 載入，並使用 `/api/batch` 批次請求，對首屏影響極小。
+
+**Q：可以自訂資料模型嗎？**  
+A：可以。你可在 Worker 中改寫 KV 結構、加入 D1 表格或接入 Cloudflare Queues 做離線分析。
+
+**Q：如何排除內部流量？**  
+A：在 `src/index.js` 的 `enforceRateLimit` 或 `handleCount` 中加入 IP / User-Agent 白名單判斷即可。
 
 ---
 
-## 📊 監控
+- 線上示例：https://stats.zakk.au  
+- 版本資訊：[`CHANGELOG.md`](CHANGELOG.md)  
+- 授權：MIT License（詳見 [`LICENSE`](LICENSE)）
 
-### Cloudflare Dashboard
-Workers & Pages → 你的 Worker → Metrics
-
-可查看：
-- 請求數
-- 錯誤率
-- CPU 使用時間
-- KV/D1 操作數
-
-### 自定義告警
-設置 Cloudflare Alerts：
-- 錯誤率 > 5%
-- CPU 使用 > 10ms
-- 請求數異常
-
----
-
-## 🤝 貢獻
-
-歡迎提交 Issue 和 PR！
-
-### 開發指南
-1. Fork 本倉庫
-2. 創建特性分支：`git checkout -b feature/amazing-feature`
-3. 提交修改：`git commit -m 'Add amazing feature'`
-4. 推送分支：`git push origin feature/amazing-feature`
-5. 提交 PR
-
----
-
-## 📄 授權
-
-MIT License
-
----
-
-## 🙋 FAQ
-
-### Q: 為什麼選擇 Cloudflare Workers？
-A: 全球邊緣加速、免費額度高、隱私友善、無需維護服務器。
-
-### Q: 與 Google Analytics 相比有什麼優勢？
-A: 無隱私侵犯、無 Cookie、數據完全自主、更快的載入速度。
-
-### Q: 是否支持實時統計？
-A: 是！每次訪問都會實時更新，延遲通常 < 100ms。
-
-### Q: 如何遷移現有數據？
-A: 可以通過 KV API 批量導入歷史數據，參考 `scripts/import.sh`（即將推出）。
-
-### Q: 能否統計特定時間範圍？
-A: 當前版本統計累計值。時間範圍查詢需要 D1 + 自定義查詢（計劃中）。
-
----
-
-## 🔗 相關資源
-
-- [Cloudflare Workers 文檔](https://developers.cloudflare.com/workers/)
-- [Wrangler CLI 文檔](https://developers.cloudflare.com/workers/wrangler/)
-- [KV 存儲文檔](https://developers.cloudflare.com/kv/)
-- [D1 數據庫文檔](https://developers.cloudflare.com/d1/)
-
----
-
-## 💬 支持
-
-- GitHub Issues: [提交問題](https://github.com/Zakkaus/cloudflare-stats-worker/issues)
-- Discussions: [討論區](https://github.com/Zakkaus/cloudflare-stats-worker/discussions)
-
----
-
-**⭐ 如果覺得有用，請給個星星！**
