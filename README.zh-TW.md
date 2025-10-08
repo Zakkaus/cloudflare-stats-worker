@@ -229,11 +229,13 @@ graph LR
 
 ## 儀表板亮點
 
+實際運作範例：**[stats.zakk.au](https://stats.zakk.au/)**
+
 - 深 / 淺色主題切換、繁中 / 英文介面、一鍵跳轉文章。
 - 今日 / 全站 PV・UV 卡片 + API 健康狀態。
 - 7、14、30 日 Chart.js 趨勢圖，零資料時自動顯示空狀態。
 - 熱門頁面 Top 10、快速搜尋任意 path、顯示 UTC 更新時間。
-- 可嵌入 Hugo 頁面或 iframe，維持與主站一致的體驗。
+- 部署後即為獨立網站—選配可透過 iframe / 短碼嵌入博客。
 
 ## 部署前準備
 
@@ -339,9 +341,25 @@ hugo server -D
 - 在文章頁的網路面板確認 `/api/batch`、`/api/count` 正常回應。
 - 想壓測可用 `npx autocannon` 或 `hey` 打 `/api/count`，觀察速率限制行為。
 
-## 步驟 7：建立統計儀表板頁面
+## 步驟 7：訪問儀表板
 
-在 Hugo Markdown 中嵌入短碼：
+部署完成後，直接訪問你的儀表板網域：
+
+```
+https://stats.example.com/
+```
+
+你會看到與 [stats.zakk.au](https://stats.zakk.au/) 相同的介面：
+
+- 即時今日/全站 PV・UV 卡片
+- API 健康狀態指示燈
+- 7/14/30 日趨勢圖表
+- 熱門頁面 Top 10 排行
+- 深淺色主題與繁中/英文切換
+
+**選配：嵌入 Hugo 頁面**
+
+想在博客頁面嵌入儀表板？使用提供的短碼：
 
 ```markdown
 {{< statsDashboard url="https://stats.example.com" heightClass="h-[1200px]" >}}

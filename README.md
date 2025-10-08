@@ -178,15 +178,15 @@ Every response contains a UTC `timestamp` so clients can display “last updated
    - When `/api/top` finds an empty D1 table it automatically backfills from KV to keep the dashboard stable.
    - Built-in caching keeps `/api/stats`, `/api/daily`, and `/api/top` cost-efficient without sacrificing freshness.
 
-   ## Dashboard highlights
+## Dashboard highlights
 
-   - Glassmorphism cards, light/dark theme toggle, instant zh‑TW ⇄ EN locale switch.
-   - Today/sitewide PV/UV, API health badge, last-updated timestamp (UTC).
-   - 7/14/30-day trend charts (Chart.js) with clean zero-state fallbacks.
-   - Top 10 list with badge counts, quick path search, deep links to posts.
-   - Deploys with the Worker, or embed via iframe/shortcode in any site.
+See it live: **[stats.zakk.au](https://stats.zakk.au/)**
 
-   ## Prerequisites
+- Glassmorphism cards, light/dark theme toggle, instant zh‑TW ⇄ EN locale switch.
+- Today/sitewide PV/UV, API health badge, last-updated timestamp (UTC).
+- 7/14/30-day trend charts (Chart.js) with clean zero-state fallbacks.
+- Top 10 list with badge counts, quick path search, deep links to posts.
+- Deploys as a standalone website—optionally embed via iframe/shortcode in any site.   ## Prerequisites
 
    - Cloudflare account (free plan is fine).
    - Node.js ≥ 18 and `wrangler` CLI ≥ 3.0 installed.
@@ -294,19 +294,33 @@ Every response contains a UTC `timestamp` so clients can display “last updated
    - Use `npx autocannon https://stats.example.com/api/count?url=/` to probe rate limiting if needed.
    - Stream logs with `wrangler tail` to watch KV/D1 interactions in real time.
 
-   ## Step 7: Embed the dashboard page
+## Step 7: Access your dashboard
 
-   Add the shortcode to any Hugo page or post:
+Once deployed, visit your dashboard domain directly:
 
-   ```markdown
-   {{< statsDashboard url="https://stats.example.com" heightClass="md:h-[1200px]" >}}
-   ```
+```
+https://stats.example.com/
+```
 
-   - The shortcode lives in `layouts/shortcodes/statsDashboard.html` with responsive, dark-mode aware styling.
-   - Use it inside `content/stats/index.*.md` to mirror the `/stats/` page on your site.
-   - Want full control? Port the `dashboard/` assets into Hugo partials or a standalone SPA.
+You'll see the same interface as [stats.zakk.au](https://stats.zakk.au/):
 
-   ---
+- Real-time today/site PV・UV cards
+- API health status indicator  
+- 7/14/30-day trend charts
+- Top 10 pages ranking
+- Dark/light theme and locale switcher
+
+**Optional: Embed in Hugo**
+
+Want to embed the dashboard in a blog page? Use the provided shortcode:
+
+```markdown
+{{< statsDashboard url="https://stats.example.com" heightClass="md:h-[1200px]" >}}
+```
+
+- The shortcode lives in `layouts/shortcodes/statsDashboard.html` with responsive, dark-mode aware styling.
+- Use it inside `content/stats/index.*.md` to create a `/stats/` page on your site.
+- Want full control? Port the `dashboard/` assets into Hugo partials or a standalone SPA.   ---
 
    ## API quick reference
 
