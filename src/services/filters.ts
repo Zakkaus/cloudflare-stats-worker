@@ -1,6 +1,7 @@
 // Include/exclude filter tokens (`dimension:value`) -> a SQL fragment over events_tab.
 import { DIMENSIONS, isDimension } from "../dimensions.ts";
 import type { Db } from "../db/client.ts";
+import { eachDaySpan } from "../lib/days.ts";
 import { lookupDimId } from "./dims.ts";
 
 // Cap honored tokens: each filter is a sequential D1 lookup, so an unbounded
@@ -25,6 +26,21 @@ export function parseFilterParam(url: URL, name: string): FilterToken[] {
     }
   }
   return out;
+}
+
+// A filtered query always scans events_tab over its whole range. The Overview
+// tab never asks for more than 7 days; 8 leaves room for a timezone edge case.
+// Anything wider belongs to Reports (Parquet in the browser, 0 D1 rows), and the
+// cap also stops a scripted client from walking months of raw rows.
+export const MAX_FILTERED_QUERY_DAYS = 8;
+
+// The 400 message when the request carries a filter or exclude on a known
+// dimension and its range is too wide to scan, else null. Unknown dimensions are
+// ignored by resolveFilters, so they do not count here either.
+export function filteredRangeError(url: URL, from: number, to: number): string | null {
+  if (eachDaySpan(from, to) <= MAX_FILTERED_QUERY_DAYS) return null;
+  const filtered = ["filter", "exclude"].some((name) => parseFilterParam(url, name).some((t) => isDimension(t.dimension)));
+  return filtered ? `Filtered queries are limited to ${MAX_FILTERED_QUERY_DAYS} days; use Reports for longer ranges` : null;
 }
 
 export interface ResolvedFilters {

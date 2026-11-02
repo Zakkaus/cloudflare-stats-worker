@@ -81,11 +81,18 @@ export async function sealDays(db: Db, from: number, to: number): Promise<void> 
 
 // Extend coverage backwards, bounded per run so the nightly job never becomes
 // the thing that blows the read budget.
-export async function extendRollupHistory(db: Db): Promise<void> {
+//
+// `floorDay` is the first retained day. Expired rows can linger while the prune
+// drains over several nights, and their months are already in events_monthly_tab:
+// sealing them again would count them twice.
+export async function extendRollupHistory(db: Db, floorDay: number): Promise<void> {
   const meta = await readMeta(db);
   const minDay = Number(meta[META_MIN_DAY] ?? 0);
   if (!minDay) return; // nothing sealed yet -> run scripts/sql/backfill-rollups.sql
-  const oldest = await db.$client.prepare("SELECT MIN(day) AS day FROM events_tab").first<{ day: number | null }>();
+  const oldest = await db.$client
+    .prepare("SELECT MIN(day) AS day FROM events_tab WHERE day >= ?")
+    .bind(floorDay)
+    .first<{ day: number | null }>();
   if (!oldest || oldest.day === null) return;
   if (Number(oldest.day) >= minDay) return; // already covers everything retained
 

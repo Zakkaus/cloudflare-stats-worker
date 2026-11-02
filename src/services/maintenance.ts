@@ -6,7 +6,7 @@ import { createDb, getD1 } from "../db/client.ts";
 import { offsetDayInt } from "../lib/days.ts";
 import { exportArchive } from "./archive-export.ts";
 import { META_MAX_DAY, invalidateMetaCache, readMeta } from "./meta.ts";
-import { pruneExpiredMonths } from "./retention.ts";
+import { pruneExpiredDays, retentionCutoff } from "./retention.ts";
 import { extendRollupHistory, sealDays } from "./rollup.ts";
 import { refreshUvSnapshot } from "./uv-snapshot.ts";
 
@@ -48,13 +48,14 @@ export async function runMaintenance(env: Env): Promise<void> {
   // 2) Walk the sealed window backwards a few days per night until it covers the
   //    whole retention window. Everything below rollup_min_day still answers
   //    correctly, just via a raw scan, so this is a pure speed-up over time.
-  await extendRollupHistory(db);
+  await extendRollupHistory(db, retentionCutoff(today));
 
   // 3) Refresh the unique-visitor snapshot the headline cards read.
   await refreshUvSnapshot(db, tz, today);
 
-  // 4) Archive + prune raw events older than 6 whole months.
-  await pruneExpiredMonths(env, db, today);
+  // 4) Archive + prune raw events older than 6 whole months, oldest day first,
+  //    within a nightly write budget (a month can take a fortnight to drain).
+  await pruneExpiredDays(env, db, today);
 
   // 5) Write closed days to the Parquet archive in R2. Last on purpose: it is
   //    the only step that can fail for reasons outside D1 (R2, the Durable

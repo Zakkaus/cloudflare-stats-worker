@@ -1,11 +1,21 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { echarts, ensureWorldMap } from "../charts/echarts";
 import { palette } from "../charts/theme";
-import { addFilter, theme } from "../state/store";
+import { theme } from "../state/store";
 import { countryName } from "../utils/countryName";
 import type { AggregateRow } from "../api/types";
 
-export function CountryMap({ rows, metricLabel }: { rows: AggregateRow[]; metricLabel: string }) {
+export function CountryMap({
+  rows,
+  metricLabel,
+  onSelect,
+}: {
+  rows: AggregateRow[];
+  metricLabel: string;
+  onSelect?: (country: string) => void;
+}) {
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<ReturnType<typeof echarts.init> | null>(null);
   const [ready, setReady] = useState(false);
@@ -17,7 +27,7 @@ export function CountryMap({ rows, metricLabel }: { rows: AggregateRow[]; metric
       if (disposed || !el.current) return;
       chart.current = echarts.init(el.current);
       chart.current.on("click", (params: any) => {
-        if (params.name) addFilter("country", "include", params.name);
+        if (params.name) onSelectRef.current?.(params.name);
       });
       const onResize = () => chart.current?.resize();
       window.addEventListener("resize", onResize);

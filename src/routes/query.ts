@@ -6,7 +6,7 @@ import type { AppEnv } from "../env.ts";
 import { NO_STORE, cacheHeaders, jsonResponse } from "../http.ts";
 import { dayIntToISO } from "../lib/days.ts";
 import { clampInt, metricParam, resolveRange } from "../lib/params.ts";
-import { resolveFilters } from "../services/filters.ts";
+import { filteredRangeError, resolveFilters } from "../services/filters.ts";
 import {
   planQuery,
   queryViaRaw,
@@ -14,6 +14,7 @@ import {
   type Metric,
   type ResultRow,
 } from "../services/query-plan.ts";
+import { readMeta, retainedFloor } from "../services/meta.ts";
 import { withDb } from "../middleware.ts";
 
 const MAX_GROUP_BY_DIMS = 3; // hierarchy views ask for at most 3 levels at once
@@ -37,16 +38,21 @@ query.all("/api/query", withDb, async (c) => {
     groupBy.push(name);
   }
   const { from, to } = resolveRange(url, config);
+  const tooWide = filteredRangeError(url, from, to);
+  if (tooWide) return jsonResponse({ error: tooWide }, 400, NO_STORE);
   // A tuple breakdown feeds a hierarchy the client truncates per ring, so it
   // needs far more rows than a flat top-N list. Both come from one statement,
   // and rows returned are not what costs -- rows scanned is.
-  const limit = clampInt(url.searchParams.get("limit"), 10, 1, groupBy.length > 1 ? 2000 : 200);
+  const limit = clampInt(url.searchParams.get("limit"), 10, 1, 2000);
+  // Days of an already-aggregated month answer as empty while they drain.
+  const scanFrom = Math.max(from, retainedFloor(await readMeta(db)));
+  if (scanFrom > to) return queryResponse(metric, from, to, config, groupBy, [], 0);
 
   const filters = await resolveFilters(db, url);
   // Including a value that was never recorded -> no rows match.
   if (filters.matchesNothing) return queryResponse(metric, from, to, config, groupBy, [], 0);
 
-  const plan = await planQuery(db, config, { metric, groupBy, from, to, filtered: filters.binds.length > 0 });
+  const plan = await planQuery(db, config, { metric, groupBy, from: scanFrom, to, filtered: filters.binds.length > 0 });
   const { rows, total } = plan.rollup
     ? await queryViaRollup(db, plan, limit)
     : await queryViaRaw(db, plan, filters.clause, filters.binds, limit);

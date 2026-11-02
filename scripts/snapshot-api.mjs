@@ -88,6 +88,12 @@ get(`/api/query?group_by=path&from=${TO}&to=${FROM}`); // inverted
 get(`/api/query?group_by=path&from=2020-01-01&to=${TO}`); // span past MAX_QUERY_DAYS
 get(`/api/query?group_by=path&${range}&limit=99999`);
 get(`/api/query?group_by=path&${range}&filter=nocolon,:empty,country:`);
+// Filtered ranges are capped at 8 days (Overview never needs more): these are 400s.
+get(`/api/query?group_by=path&${early}&filter=country:JP`);
+get(`/api/query?group_by=path&${early}&exclude=browser:Safari`);
+get(`/api/timeseries?${early}&filter=country:JP`);
+// ...but an unknown dimension is ignored, so it is not a filtered query.
+get(`/api/query?group_by=path&${early}&filter=bogus:JP`);
 
 // Archive (the manifest depends on how many cron runs the target has seen).
 get("/api/archive/manifest");

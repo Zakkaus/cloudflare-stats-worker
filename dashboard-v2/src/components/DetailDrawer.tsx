@@ -1,399 +1,52 @@
-import { useEffect, useRef, useState } from "preact/hooks";
-import { createGrid } from "ag-grid-community";
-import type { GridApi, GridOptions, ColDef } from "ag-grid-community";
-import { gridTheme } from "../grid/agGridSetup";
-import { MultiFilter } from "../grid/MultiFilter";
-import { echarts } from "../charts/echarts";
-import { palette, SERIES_COLORS } from "../charts/theme";
-import { CountryMap } from "./CountryMap";
-import { useAggregate, useHierarchy } from "../hooks";
-import {
-  addFilter,
-  closeDrawer,
-  drawerDimension,
-  metric,
-  openDrawer,
-  theme,
-  DIMENSION_LABELS,
-  DRAWER_DIMENSIONS,
-  HIERARCHY,
-} from "../state/store";
-import { countryName } from "../utils/countryName";
-import type { AggregateRow, Dimension, HierarchyNode } from "../api/types";
+// Overview's drawer: rows come from the D1 API, and filtering happens inside the
+// drawer (see Drawer.tsx), never on the Overview itself.
+import { useMemo } from "preact/hooks";
+import { Drawer, type DrawerSource } from "./Drawer";
+import { useAggregate, useTuples } from "../hooks";
+import { closeDrawer, drawerDimension, metric, openDrawer, timeRange } from "../state/store";
+import { openInReports } from "../state/reports";
+import type { AggregateRow, Dimension } from "../api/types";
+import { HIERARCHY_TUPLE_LIMIT } from "../utils/tree";
 
-function DetailChart({ rows }: { rows: AggregateRow[] }) {
-  const el = useRef<HTMLDivElement>(null);
-  const chart = useRef<ReturnType<typeof echarts.init> | null>(null);
-  const themeVal = theme.value;
+// The worker clamps a single-dimension breakdown at 2,000 rows. A complete list
+// reads the same rows from D1 as an 8-row one (a rollup answers by scanning the
+// date range, not by LIMIT), and local filtering is only right on a complete list
+// -- so a list that hits the cap is flagged in the drawer (rowLimits).
+const FLAT_LIMIT = 2000;
 
-  useEffect(() => {
-    if (!el.current) return;
-    chart.current = echarts.init(el.current);
-    const onResize = () => chart.current?.resize();
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      chart.current?.dispose();
-      chart.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!chart.current) return;
-    const p = palette();
-    const top = rows.slice(0, 12).reverse();
-    chart.current.setOption(
-      {
-        grid: { left: 8, right: 24, top: 10, bottom: 10, containLabel: true },
-        tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-        xAxis: { type: "value", splitLine: { lineStyle: { color: p.grid } }, axisLabel: { color: p.muted } },
-        yAxis: {
-          type: "category",
-          data: top.map((r) => r.key),
-          axisLabel: { color: p.muted, width: 160, overflow: "truncate" },
-          axisLine: { lineStyle: { color: p.grid } },
-        },
-        series: [
-          {
-            type: "bar",
-            data: top.map((r) => r.value),
-            itemStyle: { color: SERIES_COLORS[0], borderRadius: [0, 4, 4, 0] },
-          },
-        ],
-      },
-      true
-    );
-  }, [rows, themeVal]);
-
-  return <div ref={el} style="width:100%;height:360px;" />;
+function useFlat(dimension: Dimension) {
+  const { data, loading, error } = useAggregate(dimension, FLAT_LIMIT);
+  const rows = useMemo<AggregateRow[] | null>(() => data?.results ?? null, [data]);
+  return { data: rows, loading, error };
 }
 
-// Flat grid. Only ever rendered for dimensions with no parent (path,
-// referrer_domain, country) -- the parented ones (browser_version, os_version,
-// device_*) are reachable only through HierarchyView, which shows the whole
-// tuple. The old "parent" column here was unreachable, and the API no longer
-// returns that field.
-function DetailGrid({ dimension, rows }: { dimension: Dimension; rows: AggregateRow[] }) {
-  const el = useRef<HTMLDivElement>(null);
-  const api = useRef<GridApi | null>(null);
-  const themeVal = theme.value;
-  const metricLabel = metric.value === "visitors" ? "Visitors" : "Page Views";
-
-  useEffect(() => {
-    if (!el.current) return;
-    const columnDefs: ColDef<AggregateRow>[] = [
-      {
-        headerName: DIMENSION_LABELS[dimension],
-        field: "key" as const,
-        flex: 2,
-        filter: MultiFilter,
-        sortable: true,
-        ...(dimension === "country" && { valueFormatter: (p) => countryName(p.value) }),
-      },
-      {
-        headerName: metricLabel,
-        field: "value" as const,
-        flex: 1,
-        sortable: true,
-        sort: "desc",
-        valueFormatter: (p) => (p.value ?? 0).toLocaleString(),
-      },
-      {
-        headerName: "",
-        width: 130,
-        sortable: false,
-        filter: false,
-        cellRenderer: (p: any) => {
-          const wrap = document.createElement("div");
-          const mk = (label: string, op: "include" | "exclude", cls: string) => {
-            const b = document.createElement("button");
-            b.textContent = label;
-            b.className = cls;
-            b.style.cssText = "margin-right:4px;cursor:pointer;font-size:11px;padding:1px 6px;";
-            b.onclick = () => addFilter(dimension, op, p.data.key);
-            return b;
-          };
-          wrap.appendChild(mk("Filter", "include", "btn"));
-          wrap.appendChild(mk("Exclude", "exclude", "btn"));
-          return wrap;
-        },
-      },
-    ];
-
-    const options: GridOptions<AggregateRow> = {
-      theme: gridTheme(theme.value),
-      columnDefs,
-      defaultColDef: { resizable: true },
-      rowData: rows,
-      pagination: true,
-      paginationPageSize: 20,
-    };
-    api.current = createGrid(el.current, options);
-    return () => {
-      api.current?.destroy();
-      api.current = null;
-    };
-  }, [dimension]);
-
-  useEffect(() => {
-    api.current?.setGridOption("rowData", rows);
-  }, [rows]);
-
-  useEffect(() => {
-    api.current?.setGridOption("theme", gridTheme(themeVal));
-  }, [themeVal]);
-
-  return <div class="grid-wrap" ref={el} />;
-}
-
-// --- Hierarchy (sunburst) view ------------------------------------------------
-
-function toSunburst(nodes: HierarchyNode[]): any[] {
-  return nodes.map((n) => ({
-    name: n.key,
-    value: n.value,
-    ...(n.children && n.children.length ? { children: toSunburst(n.children) } : {}),
-  }));
-}
-
-function HierarchySunburst({ tree, metricLabel }: { tree: HierarchyNode[]; metricLabel: string }) {
-  const el = useRef<HTMLDivElement>(null);
-  const chart = useRef<ReturnType<typeof echarts.init> | null>(null);
-  const themeVal = theme.value;
-
-  useEffect(() => {
-    if (!el.current) return;
-    chart.current = echarts.init(el.current);
-    const onResize = () => chart.current?.resize();
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      chart.current?.dispose();
-      chart.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!chart.current) return;
-    const p = palette();
-    chart.current.setOption(
-      {
-        color: SERIES_COLORS,
-        tooltip: {
-          trigger: "item",
-          formatter: (params: any) => {
-            const info = params.treePathInfo || [];
-            const path = info.slice(1).map((t: any) => t.name).join(" › ");
-            const total = info[0]?.value ?? 0;
-            const value = params.value ?? 0;
-            const pct = total > 0 ? ` (${((value / total) * 100).toFixed(1)}%)` : "";
-            return `${path}<br/><b>${value.toLocaleString()}</b> ${metricLabel}${pct}`;
-          },
-        },
-        series: [
-          {
-            type: "sunburst",
-            radius: [0, "95%"],
-            data: toSunburst(tree),
-            emphasis: { focus: "ancestor" },
-            itemStyle: { borderColor: p.bg, borderWidth: 2 },
-            label: { color: "#fff", minAngle: 8 },
-          },
-        ],
-      },
-      true
-    );
-  }, [tree, themeVal, metricLabel]);
-
-  return <div ref={el} style="width:100%;height:360px;" />;
-}
-
-interface LeafRow {
-  path: string[];
-  value: number;
-}
-
-function flattenLeaves(nodes: HierarchyNode[], prefix: string[] = []): LeafRow[] {
-  const out: LeafRow[] = [];
-  for (const n of nodes) {
-    const path = [...prefix, n.key];
-    if (n.children && n.children.length) out.push(...flattenLeaves(n.children, path));
-    else out.push({ path, value: n.value });
-  }
-  return out;
-}
-
-function HierarchyGrid({ levels, tree }: { levels: Dimension[]; tree: HierarchyNode[] }) {
-  const el = useRef<HTMLDivElement>(null);
-  const api = useRef<GridApi | null>(null);
-  const themeVal = theme.value;
-  const metricVal = metric.value;
-  const metricLabel = metricVal === "visitors" ? "Visitors" : "Page Views";
-  const levelsKey = levels.join(">");
-  const rows = flattenLeaves(tree);
-
-  useEffect(() => {
-    if (!el.current) return;
-    const deepest = levels[levels.length - 1];
-    const columnDefs: ColDef<LeafRow>[] = [
-      ...levels.map((dim, i) => ({
-        headerName: DIMENSION_LABELS[dim],
-        valueGetter: (p: any) =>
-          dim === "country" ? countryName(p.data?.path[i]) : p.data?.path[i],
-        flex: 1,
-        filter: MultiFilter,
-        sortable: true,
-      })),
-      {
-        headerName: metricLabel,
-        field: "value" as const,
-        flex: 1,
-        sortable: true,
-        sort: "desc" as const,
-        valueFormatter: (p) => (p.value ?? 0).toLocaleString(),
-      },
-      {
-        headerName: "",
-        width: 130,
-        sortable: false,
-        filter: false,
-        cellRenderer: (p: any) => {
-          const wrap = document.createElement("div");
-          const mk = (label: string, op: "include" | "exclude") => {
-            const b = document.createElement("button");
-            b.textContent = label;
-            b.className = "btn";
-            b.style.cssText = "margin-right:4px;cursor:pointer;font-size:11px;padding:1px 6px;";
-            b.onclick = () => addFilter(deepest, op, p.data.path[p.data.path.length - 1]);
-            return b;
-          };
-          wrap.appendChild(mk("Filter", "include"));
-          wrap.appendChild(mk("Exclude", "exclude"));
-          return wrap;
-        },
-      },
-    ];
-
-    const options: GridOptions<LeafRow> = {
-      theme: gridTheme(theme.value),
-      columnDefs,
-      defaultColDef: { resizable: true },
-      rowData: rows,
-      pagination: true,
-      paginationPageSize: 20,
-    };
-    api.current = createGrid(el.current, options);
-    return () => {
-      api.current?.destroy();
-      api.current = null;
-    };
-    // Rebuild when the active levels or the metric (column header/sort) change.
-  }, [levelsKey, metricVal]);
-
-  useEffect(() => {
-    api.current?.setGridOption("rowData", rows);
-  }, [tree]);
-
-  useEffect(() => {
-    api.current?.setGridOption("theme", gridTheme(themeVal));
-  }, [themeVal]);
-
-  return <div class="grid-wrap" ref={el} />;
-}
-
-function HierarchyView({ dimension }: { dimension: Dimension }) {
-  const allLevels = HIERARCHY[dimension]!;
-  const [depth, setDepth] = useState(1);
-  // Reset to top-level only when the root dimension changes.
-  useEffect(() => setDepth(1), [dimension]);
-  const levels = allLevels.slice(0, depth);
-  const { data, loading } = useHierarchy(levels);
-  const tree = data ?? [];
-  const metricLabel = metric.value === "visitors" ? "Visitors" : "Page Views";
-
-  return (
-    <>
-      <div class="level-control">
-        {allLevels.map((dim, i) => {
-          const active = i < depth;
-          const isRoot = i === 0;
-          return (
-            <button
-              class={`level-chip${active ? " active" : ""}`}
-              disabled={isRoot}
-              title={isRoot ? "Top level" : active ? "Remove this level" : "Add this level"}
-              onClick={() => setDepth(active ? i : i + 1)}
-            >
-              {!active && !isRoot ? "+ " : ""}
-              {DIMENSION_LABELS[dim]}
-            </button>
-          );
-        })}
-      </div>
-
-      {loading && <div class="loading">Loading…</div>}
-
-      <HierarchySunburst tree={tree} metricLabel={metricLabel} />
-      <HierarchyGrid levels={levels} tree={tree} />
-    </>
-  );
-}
-
-// --- Flat (bar / map) view ----------------------------------------------------
-
-function FlatBody({ dimension }: { dimension: Dimension }) {
-  // 200 is the worker's clamp for a single-dimension breakdown; asking for more
-  // just produced a distinct cache key for an identical result.
-  const { data, loading } = useAggregate(dimension, 200);
-  const rows = data?.results ?? [];
-  const metricLabel = metric.value === "visitors" ? "Visitors" : "Page Views";
-
-  return (
-    <>
-      {loading && <div class="loading">Loading…</div>}
-
-      {dimension === "country" ? (
-        <CountryMap rows={rows} metricLabel={metricLabel} />
-      ) : (
-        <DetailChart rows={rows} />
-      )}
-
-      <DetailGrid dimension={dimension} rows={rows} />
-    </>
-  );
-}
+const source = (): DrawerSource => ({
+  useFlat,
+  useTuples,
+  exact: false,
+  comparing: false,
+  rowLimits: { flat: FLAT_LIMIT, tuples: HIERARCHY_TUPLE_LIMIT },
+  metricLabel: metric.value === "visitors" ? "Visitors" : "Page Views",
+  onDimensionChange: openDrawer,
+  onClose: closeDrawer,
+  // The bridge for any question Overview cannot answer: same range, and whatever
+  // the drawer was filtered to becomes Reports filters.
+  headerExtra: (localFilters) => (
+    <button
+      class="btn"
+      title="Open this range in Reports, which can filter and compare freely"
+      onClick={() => {
+        openInReports(timeRange.value, localFilters);
+        closeDrawer();
+      }}
+    >
+      Open in Reports →
+    </button>
+  ),
+});
 
 export default function DetailDrawer() {
   const dimension = drawerDimension.value;
   if (!dimension) return null;
-  return <DrawerBody dimension={dimension} />;
-}
-
-function DrawerBody({ dimension }: { dimension: Dimension }) {
-  const isHierarchy = dimension in HIERARCHY;
-
-  return (
-    <>
-      <div class="drawer-backdrop" onClick={closeDrawer} />
-      <div class="drawer" role="dialog" aria-modal="true">
-        <div class="drawer-head">
-          <h2>{DIMENSION_LABELS[dimension]}</h2>
-          <select
-            class="dim-select"
-            value={dimension}
-            onChange={(e) => openDrawer((e.target as HTMLSelectElement).value as Dimension)}
-          >
-            {DRAWER_DIMENSIONS.map((d) => (
-              <option value={d}>{DIMENSION_LABELS[d]}</option>
-            ))}
-          </select>
-          <button class="btn" onClick={closeDrawer}>
-            Close
-          </button>
-        </div>
-
-        {isHierarchy ? <HierarchyView dimension={dimension} /> : <FlatBody dimension={dimension} />}
-      </div>
-    </>
-  );
+  return <Drawer dimension={dimension} source={source()} />;
 }

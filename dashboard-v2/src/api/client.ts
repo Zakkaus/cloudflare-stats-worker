@@ -101,7 +101,7 @@ export function queryTuples(p: QueryParams, signal?: AbortSignal): Promise<Tuple
 }
 
 export function timeseries(
-  p: { metric: QueryParams["metric"]; from: string; to: string; filters: Filter[] },
+  p: { metric: QueryParams["metric"]; from: string; to: string; filters?: Filter[] },
   signal?: AbortSignal
 ): Promise<TimeseriesResponse> {
   const url = buildUrl("/api/timeseries", { metric: p.metric, from: p.from, to: p.to }, p.filters);

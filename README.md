@@ -115,7 +115,7 @@ Example:
 
 ## Dashboard
 
-English-only preact SPA (AG Grid + Apache ECharts). Metric switcher (Visitors / Page Views), time-range shortcuts (Today / Yesterday / Last 7 / Last 28 days), dark-light toggle, a trend chart, and six panels (Referrer, Path, Country, Browser, OS, Device type). Hover a panel row to **filter** or **exclude** that value; every panel updates. Each panel expands into a drill-down drawer with an AG Grid table and — for Country — an ECharts world map keyed by ISO-2.
+English-only preact SPA (AG Grid + Apache ECharts) with three tabs. **Overview** reads D1: up to 7 days, a Page Views / Visitors switch, a date-range popover (Today / Yesterday / This week / Last 7 days / Last week / custom, week start Sun or Mon), a trend chart and six panels (Referrer, Path, Country, Browser, OS, Device type). Click a panel to open its drill-down drawer (bar chart or country map, sunburst for browser / OS / device, AG Grid table); filtering inside the drawer happens in the browser and costs nothing. **Reports** answers any date range from Parquet in your browser (DuckDB-Wasm), with any filter, an optional comparison range (previous period / year, same weekdays, or custom), exact unique visitors on every ring, and import / export of Parquet files. **Live** streams pageviews as they arrive.
 
 ---
 
@@ -133,7 +133,7 @@ bash scripts/verify.sh http://127.0.0.1:8787
 
 ## Retention
 
-Raw events are kept day-level for ~6 months. A nightly cron (`30 15 * * *`, i.e. 00:30 Asia/Tokyo) refreshes the `site_daily_tab` rollup and archives older months into `events_monthly_tab` (per-dimension PV/UV — exact per single value, but not cross-filterable once the raw rows are pruned), then deletes the raw rows.
+Raw events are kept day-level for ~6 months. A nightly cron (`30 15 * * *`, i.e. 00:30 Asia/Tokyo) refreshes the `site_daily_tab` rollup and archives older months into `events_monthly_tab` (per-dimension PV/UV — exact per single value, but not cross-filterable once the raw rows are pruned), then deletes the raw rows day by day over the following nights, within a nightly write budget.
 
 ## Cloudflare Zero Trust Access Authentication
 

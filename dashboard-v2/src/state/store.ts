@@ -1,15 +1,38 @@
-import { signal, computed } from "@preact/signals";
-import type { Dimension, Filter, FilterOp, Metric, Preset } from "../api/types";
-import { rangeForPreset } from "./dates";
+import { batch, computed, signal } from "@preact/signals";
+import type { Dimension, Metric } from "../api/types";
+import { todayInTz } from "./dates";
+import { rangeForPreset, type DateRange, type RangePreset, type WeekStart } from "./range";
 
 // --- Configuration (timezone) fetched once at boot ---
 export const timezone = signal<string>("Asia/Tokyo");
 
-// --- Core dashboard state ---
+// Week start for "This week" / "Last week": one switch, shared by both tabs'
+// pickers and remembered across visits.
+const WEEK_START_KEY = "stats-week-start";
+function loadWeekStart(): WeekStart {
+  try {
+    return localStorage.getItem(WEEK_START_KEY) === "sun" ? "sun" : "mon";
+  } catch {
+    return "mon";
+  }
+}
+export const weekStart = signal<WeekStart>(loadWeekStart());
+
+export function setWeekStart(w: WeekStart) {
+  weekStart.value = w;
+  try {
+    localStorage.setItem(WEEK_START_KEY, w);
+  } catch {
+    /* private mode: the switch just is not remembered */
+  }
+}
+
+// --- Overview state ---
+// Overview reads D1 only, for at most 7 days, with no global filters: anything
+// that needs a filter or a longer range lives in Reports (DuckDB, 0 D1 rows).
 export const metric = signal<Metric>("pageviews");
-export const preset = signal<Preset>("last7d");
-export const customRange = signal<{ from: string; to: string } | null>(null);
-export const filters = signal<Filter[]>([]);
+export const preset = signal<RangePreset>("last7d");
+export const customRange = signal<DateRange | null>(null);
 export const theme = signal<"light" | "dark">(
   (localStorage.getItem("stats-theme") as "light" | "dark") || "dark"
 );
@@ -17,65 +40,50 @@ export const theme = signal<"light" | "dark">(
 // Detail drawer: which dimension is expanded (null = closed).
 export const drawerDimension = signal<Dimension | null>(null);
 
-// Which top-level view is showing: the historical D1-backed dashboard, the
-// in-memory live view (see components/live/LiveView.tsx), or the
-// Month-over-Month comparison over the Parquet archive (components/mom/).
-export type View = "history" | "live" | "mom";
-export const view = signal<View>("history");
+// Which top-level view is showing: the D1-backed Overview, the in-memory live
+// view (components/live/LiveView.tsx), or Reports over the Parquet archive
+// (components/reports/).
+export type View = "overview" | "live" | "reports";
+export const view = signal<View>("overview");
 
-export function setView(v: View) {
-  view.value = v;
+// Old names for the same tabs ("history", "mom") are still accepted.
+export function setView(v: View | "history" | "mom") {
+  view.value = v === "history" ? "overview" : v === "mom" ? "reports" : v;
 }
 
+// A coarse clock, so `today` rolls over at midnight in a tab left open. The
+// computed below only notifies when the date string actually changes, so the
+// tick costs nothing until then -- and then every preset re-resolves (and
+// Overview refetches) on its own.
+const CLOCK_TICK_MS = 60000;
+const clock = signal(Date.now());
+setInterval(() => (clock.value = Date.now()), CLOCK_TICK_MS);
+
+export const today = computed(() => todayInTz(timezone.value, new Date(clock.value)));
+
 // Derived time range from the active preset + timezone, or a custom range.
-export const timeRange = computed(() =>
-  customRange.value
-    ? { preset: "custom" as const, ...customRange.value }
-    : rangeForPreset(preset.value, timezone.value)
-);
+export const timeRange = computed<DateRange>(() => {
+  if (preset.value === "custom" && customRange.value) return customRange.value;
+  return rangeForPreset(preset.value, today.value, weekStart.value) ?? rangeForPreset("last7d", today.value, weekStart.value)!;
+});
 
 // A cache/dependency key that changes whenever the query inputs change.
 export const queryKey = computed(() => {
   const r = timeRange.value;
-  return JSON.stringify({ m: metric.value, from: r.from, to: r.to, f: filters.value });
+  return JSON.stringify({ m: metric.value, from: r.from, to: r.to });
 });
 
 export function setMetric(m: Metric) {
   metric.value = m;
 }
 
-export function setPreset(p: Preset) {
-  preset.value = p;
-  customRange.value = null;
-}
-
-export function setCustomRange(from: string, to: string) {
-  customRange.value = { from, to };
-}
-
-function sameFilter(a: Filter, b: Filter) {
-  return a.dimension === b.dimension && a.op === b.op && a.value === b.value;
-}
-
-export function addFilter(dimension: Dimension, op: FilterOp, value: string) {
-  const next: Filter = { dimension, op, value };
-  // Replace any opposite-op filter on the same dimension+value, and dedupe.
-  const kept = filters.value.filter(
-    (f) => !(f.dimension === dimension && f.value === value)
-  );
-  if (filters.value.some((f) => sameFilter(f, next))) {
-    filters.value = kept; // toggling the same filter off
-  } else {
-    filters.value = [...kept, next];
-  }
-}
-
-export function removeFilter(target: Filter) {
-  filters.value = filters.value.filter((f) => !sameFilter(f, target));
-}
-
-export function clearFilters() {
-  filters.value = [];
+// Commit the picker's Apply: one signal batch, so one query per panel.
+export function applyOverviewRange(p: RangePreset, range: DateRange, w: WeekStart) {
+  batch(() => {
+    setWeekStart(w);
+    preset.value = p;
+    customRange.value = p === "custom" ? range : null;
+  });
 }
 
 export function openDrawer(dimension: Dimension) {

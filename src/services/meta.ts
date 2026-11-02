@@ -2,10 +2,15 @@
 // archive window and the UV snapshot (see src/db/schema.ts).
 import { metaTab } from "../db/schema.ts";
 import type { Db } from "../db/client.ts";
+import { firstDayOfNextMonth } from "../lib/days.ts";
 
 export const META_MIN_DAY = "rollup_min_day"; // earliest sealed day; before it -> raw
 export const META_MAX_DAY = "rollup_max_day"; // latest sealed day (normally yesterday)
 export const META_UV_SNAPSHOT = "uv_snapshot"; // JSON { as_of, uv } for the all-time card
+// Latest month (yyyymm) whose events_monthly_tab aggregate has been written. A
+// month is pruned over several nights, so this is what stops the aggregate being
+// recomputed from a half-deleted month.
+export const META_PRUNE_AGG_MONTH = "prune_agg_month";
 export const META_ARCHIVE_MIN_DAY = "archive_min_day";
 export const META_ARCHIVE_MAX_DAY = "archive_max_day";
 
@@ -38,6 +43,16 @@ export async function readMeta(db: Db): Promise<Meta> {
   }
   metaCache = { at: now, value: out };
   return out;
+}
+
+// First day a range read may scan; 0 when nothing has been pruned. Every month up
+// to prune_agg_month belongs to events_monthly_tab, but its raw rows drain over
+// several nights, so reading them would return a silently partial count. Days
+// below this floor answer as empty, exactly as they did when a month was deleted
+// in one go.
+export function retainedFloor(meta: Meta): number {
+  const month = Number(meta[META_PRUNE_AGG_MONTH] ?? 0);
+  return month ? firstDayOfNextMonth(month) : 0;
 }
 
 // Coverage bounds only ever move outwards: the max never goes down, the min never

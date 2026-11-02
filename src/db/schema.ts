@@ -81,19 +81,16 @@ export const dimTables: Record<DimensionName, typeof dimPathTab> = {
 // ---------------------------------------------------------------------------
 // Keep indexes deliberately few -- and the reason is WRITES, not storage. D1
 // bills one written row per index that covers an inserted column, so every
-// index here adds a row to the cost of every single pageview. At 7.5K PV/day
-// the four below already cost ~30K of the 100K/day free write budget; a fifth
-// would be ~7.5K more. Reads are handled by dim_daily_tab instead, which is
-// where the leverage actually is.
+// index here adds a row to the cost of every single pageview (and another to the
+// delete that eventually prunes it). Only `day` is left: it serves the live
+// "today" reads, the per-day archive export and the per-day prune.
 //
-// These composite (day, <dim>) indexes only matter on the raw-scan fallback
-// path (filtered queries and multi-day metric=visitors). `ref_domain_id` earns
-// its slot because referrer is the dimension people actually filter on; the
-// rest are served from the rollup and never scan events_tab.
-//
-// idx_events_day_ref is an opt-in on existing deployments
-// (scripts/sql/add-referrer-index.sql: ~one written row per existing event),
-// but a fresh install gets it from the start.
+// There used to be (day, country), (day, path) and (day, ref_domain) composites
+// for the raw-scan fallback (filtered queries, multi-day visitors). Nothing
+// filters on D1 over more than 8 days any more -- Overview filters in the browser
+// and Reports runs on Parquet -- so they only cost writes: 4-5 down to 2 per
+// pageview. Migration 0001 drops them; scripts/sql/add-referrer-index.sql, which
+// used to add one back, is gone with them.
 export const eventsTab = sqliteTable(
   "events_tab",
   {
@@ -113,9 +110,6 @@ export const eventsTab = sqliteTable(
   },
   (t) => [
     index("idx_events_day").on(t.day),
-    index("idx_events_day_country").on(t.day, t.countryId),
-    index("idx_events_day_path").on(t.day, t.pathId),
-    index("idx_events_day_ref").on(t.day, t.refDomainId),
   ]
 );
 

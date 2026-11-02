@@ -897,8 +897,8 @@ def _baseline_one(config_path, remote, dry_run):
     The baseline migration (drizzle/0000_*.sql) describes the schema these
     databases already have, so it must be RECORDED as applied, never run: running
     it would at best do nothing and at worst create objects the deployment
-    deliberately lacks (idx_events_day_ref is a ~one-written-row-per-event
-    statement, opt-in via scripts/sql/add-referrer-index.sql).
+    deliberately lacks (idx_events_day_ref was a ~one-written-row-per-event
+    opt-in; migration 0001 drops it everywhere anyway).
 
     Returns True when the database is now (or already was) tracked."""
     db_name = _db_name_of(config_path)
@@ -932,8 +932,7 @@ def _baseline_one(config_path, remote, dry_run):
         if _EQUIVALENT_TO_INLINE_UNIQUE.match(idx):
             continue
         if idx == "idx_events_day_ref":
-            warn(f"  index {idx} is absent (opt-in; it stays absent). To add it later: "
-                 "python scripts/manage.py run-sql add-referrer-index")
+            warn(f"  index {idx} is absent (it was an opt-in, and 0001 drops it anyway)")
         else:
             warn(f"  index {idx} is absent and will NOT be created by baselining")
 

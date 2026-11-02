@@ -22,23 +22,17 @@ export interface Filter {
   value: string;
 }
 
-export type Preset = "today" | "yesterday" | "last7d" | "last28d";
-
-export interface TimeRange {
-  preset: Preset | "custom";
-  from: string; // YYYY-MM-DD
-  to: string; // YYYY-MM-DD
-}
-
 export interface AggregateRow {
   key: string;
   value: number;
+  prev?: number; // the comparison period's value (Reports only)
 }
 
 // One row of a multi-dimension breakdown: the whole tuple, outermost first.
 export interface TupleRow {
   keys: string[];
   value: number;
+  prev?: number;
 }
 
 // A node in a dimension hierarchy (sunburst), assembled client-side from the
@@ -46,6 +40,7 @@ export interface TupleRow {
 export interface HierarchyNode {
   key: string;
   value: number;
+  prev?: number; // the comparison period's value (Reports only)
   dim: Dimension;
   children?: HierarchyNode[];
 }
@@ -92,6 +87,6 @@ export interface QueryParams {
   from: string;
   to: string;
   groupBy: Dimension | Dimension[];
-  filters: Filter[];
+  filters?: Filter[];
   limit?: number;
 }

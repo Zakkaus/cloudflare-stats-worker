@@ -8,7 +8,7 @@ import type { Dimension } from "../api/types";
 
 export type MatchOp = "equals" | "contains" | "prefix" | "regex";
 
-export interface MomFilter {
+export interface ReportFilter {
   id: number;
   dimension: Dimension;
   op: "include" | "exclude";
@@ -47,7 +47,7 @@ function valueTest(col: string, match: MatchOp, value: string, dim: Dimension, p
 // Filters on different dimensions are AND-ed; values within one filter are
 // OR-ed. Exclude keeps NULL rows (a direct visit is not "from google.com"),
 // matching the API's exclude semantics.
-export function compileFilters(filters: MomFilter[], advanced: string): { sql: string; params: unknown[] } {
+export function compileFilters(filters: ReportFilter[], advanced: string): { sql: string; params: unknown[] } {
   const params: unknown[] = [];
   const parts: string[] = [];
   for (const f of filters) {

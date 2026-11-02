@@ -1,12 +1,12 @@
 // GET /api/timeseries -- daily trend.
 import { Hono } from "hono";
 import type { AppEnv } from "../env.ts";
-import { cacheHeaders, jsonResponse } from "../http.ts";
+import { NO_STORE, cacheHeaders, jsonResponse } from "../http.ts";
 import { dayIntToISO, eachDay, offsetDayInt } from "../lib/days.ts";
 import { metricParam, resolveRange } from "../lib/params.ts";
 import { withDb } from "../middleware.ts";
-import { resolveFilters } from "../services/filters.ts";
-import { META_MAX_DAY, META_MIN_DAY, readMeta } from "../services/meta.ts";
+import { filteredRangeError, resolveFilters } from "../services/filters.ts";
+import { META_MAX_DAY, META_MIN_DAY, readMeta, retainedFloor } from "../services/meta.ts";
 import type { Metric } from "../services/query-plan.ts";
 
 export const timeseries = new Hono<AppEnv>();
@@ -16,6 +16,16 @@ timeseries.all("/api/timeseries", withDb, async (c) => {
   const url = new URL(c.req.url);
   const metric = metricParam(url);
   const { from, to } = resolveRange(url, config);
+  const tooWide = filteredRangeError(url, from, to);
+  if (tooWide) return jsonResponse({ error: tooWide }, 400, NO_STORE);
+
+  // Days of an already-aggregated month are zeros while they drain: the series
+  // still lists them, but nothing below the floor is scanned.
+  const meta = await readMeta(db);
+  const scanFrom = Math.max(from, retainedFloor(meta));
+  if (scanFrom > to) {
+    return jsonResponse(seriesEnvelope(from, to, metric, new Map()), 200, cacheHeaders(to, config));
+  }
 
   const filters = await resolveFilters(db, url);
   if (filters.matchesNothing) {
@@ -31,12 +41,11 @@ timeseries.all("/api/timeseries", withDb, async (c) => {
   const liveAgg = metric === "visitors" ? "COUNT(DISTINCT e.visitor_id)" : "COUNT(*)";
   let results: { day: number; value: number }[] | undefined;
   if (!filtered) {
-    const meta = await readMeta(db);
     const minDay = Number(meta[META_MIN_DAY] ?? 0);
     const sealedTo = Math.min(to, Number(meta[META_MAX_DAY] ?? 0));
-    if (minDay && from >= minDay && sealedTo >= from) {
+    if (minDay && scanFrom >= minDay && sealedTo >= scanFrom) {
       const parts = [`SELECT day, ${column} AS value FROM site_daily_tab WHERE day BETWEEN ? AND ?`];
-      const args = [from, sealedTo];
+      const args = [scanFrom, sealedTo];
       const liveFrom = offsetDayInt(sealedTo, 1);
       if (liveFrom <= to) {
         parts.push(`SELECT e.day AS day, ${liveAgg} AS value FROM events_tab e WHERE e.day BETWEEN ? AND ? GROUP BY e.day`);
@@ -54,7 +63,7 @@ timeseries.all("/api/timeseries", withDb, async (c) => {
         `SELECT e.day AS day, ${liveAgg} AS value FROM events_tab e ` +
           `WHERE e.day BETWEEN ? AND ?${filters.clause} GROUP BY e.day`
       )
-      .bind(from, to, ...filters.binds)
+      .bind(scanFrom, to, ...filters.binds)
       .all<{ day: number; value: number }>());
   }
 
