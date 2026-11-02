@@ -6,10 +6,17 @@ Usage:
   python scripts/manage.py init                    # First-time setup for a new site
   python scripts/manage.py deploy [name]           # Deploy an existing site
   python scripts/manage.py deploy --all            # Deploy all sites
+  python scripts/manage.py deploy [name] --migrate # Apply pending DB migrations first
   python scripts/manage.py list                    # List configured sites
-  python scripts/manage.py migrate <file> [name]   # Run a D1 SQL migration (remote)
-  python scripts/manage.py migrate <file> --local  # Run against the local D1
-  python scripts/manage.py migrate <file> --all    # Run a migration on all sites
+  python scripts/manage.py migrate [name]          # Apply pending drizzle migrations (remote)
+  python scripts/manage.py migrate --local         # ... against the local D1
+  python scripts/manage.py migrate --all           # ... on all sites
+  python scripts/manage.py baseline [name|--all]   # Adopt an EXISTING database into migration tracking
+  python scripts/manage.py run-sql <file> [name]   # Run an ad-hoc SQL file (one-offs, e.g. backfills)
+
+The schema is defined in src/db/schema.ts; `pnpm db:generate` turns changes into
+SQL under drizzle/, and `migrate` applies them per deployment via
+`wrangler d1 migrations apply`.
 
 Replaces: scripts/install.sh, scripts/deploy.sh
 """
@@ -30,9 +37,9 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEPLOYMENTS_DIR = ROOT_DIR / "deployments"
-MIGRATIONS_DIR = ROOT_DIR / "migrations"
+MIGRATIONS_DIR = ROOT_DIR / "drizzle"        # drizzle-kit output, applied by wrangler
+SQL_DIR = ROOT_DIR / "scripts" / "sql"      # ad-hoc, hand-run SQL (not tracked)
 ROOT_WRANGLER = ROOT_DIR / "wrangler.toml"
-SCHEMA_SQL = ROOT_DIR / "schema.sql"
 DASHBOARD_DIR = ROOT_DIR / "dashboard-v2"
 
 # ---------------------------------------------------------------------------
@@ -186,7 +193,7 @@ def _toml_str(value, field_name):
 DEPLOYMENT_TOML_TEMPLATE = """\
 # Managed by scripts/manage.py — do not edit manually
 name = "{name}"
-main = "../src/index.js"
+main = "../src/index.ts"
 compatibility_date = "{compat_date}"
 compatibility_flags = ["nodejs_compat"]
 
@@ -233,6 +240,7 @@ crons = ["30 15 * * *"]
 binding = "DB"
 database_name = "{db_name}"
 database_id = "{d1_id}"
+migrations_dir = "../drizzle"
 
 # Live dashboard relay (see wrangler.toml at repo root for the full note).
 # SQLite storage backend keeps it on the Workers Free plan.
@@ -395,53 +403,145 @@ def d1_create_or_fetch(db_name):
     return d1_id
 
 
-def apply_schema(db_name):
-    """Apply schema.sql to a remote D1 database."""
-    if not SCHEMA_SQL.exists():
-        raise ManageError(f"schema.sql not found at {SCHEMA_SQL}")
-    info(f"Applying schema.sql to D1 '{db_name}' (remote)...")
+def apply_migrations(db_name, config_path, remote=True):
+    """Apply pending drizzle migrations (drizzle/*.sql) to a D1 database.
+
+    Goes through `wrangler d1 migrations apply`, which tracks what has run in the
+    database's own d1_migrations table. --config makes wrangler resolve the D1
+    binding (and its migrations_dir) from the deployment's own config."""
+    target = "remote" if remote else "local"
+    ensure_baselined(db_name, config_path, remote)
+    info(f"Applying pending migrations to D1 '{db_name}' ({target})...")
     rc, _ = run_streaming([
-        "wrangler", "d1", "execute", db_name,
-        "--remote",
-        f"--file={SCHEMA_SQL}",
+        "wrangler", "d1", "migrations", "apply", db_name,
+        "--config", str(config_path),
+        "--remote" if remote else "--local",
     ])
     if rc != 0:
-        raise ManageError(f"Failed to apply schema to '{db_name}'")
-    ok("Schema applied")
+        raise ManageError(f"Failed to apply migrations to '{db_name}'")
+    ok("Migrations up to date")
 
 
-def resolve_migration_path(name):
-    """Resolve a migration file. Accepts a path (relative/absolute) or a bare
-    name resolved under migrations/ (with or without a .sql suffix)."""
+def resolve_sql_path(name):
+    """Resolve an ad-hoc SQL file. Accepts a path (relative/absolute) or a bare
+    name resolved under scripts/sql/ (with or without a .sql suffix)."""
     direct = Path(name)
     if direct.is_file():
         return direct.resolve()
-    for candidate in (MIGRATIONS_DIR / name, MIGRATIONS_DIR / f"{name}.sql"):
+    for candidate in (SQL_DIR / name, SQL_DIR / f"{name}.sql"):
         if candidate.is_file():
             return candidate
     raise ManageError(
-        f"Migration file not found: {name}\n"
-        f"  Looked in: {name}, {MIGRATIONS_DIR / name}, {MIGRATIONS_DIR / (name + '.sql')}"
+        f"SQL file not found: {name}\n"
+        f"  Looked in: {name}, {SQL_DIR / name}, {SQL_DIR / (name + '.sql')}"
     )
 
 
-def apply_migration(db_name, migration_path, config_path, remote=True):
-    """Apply a SQL migration file to a D1 database (remote by default, or local).
+def run_sql_file(db_name, sql_path, config_path, remote=True):
+    """Run a SQL file against a D1 database (remote by default, or local).
 
     Passes --config so wrangler resolves the D1 binding from the deployment's
     own config — required for --local (which maps the name to local SQLite state
     via the binding) and harmless for --remote."""
     target = "remote" if remote else "local"
-    info(f"Applying {migration_path.name} to D1 '{db_name}' ({target})...")
+    info(f"Running {sql_path.name} on D1 '{db_name}' ({target})...")
     rc, _ = run_streaming([
         "wrangler", "d1", "execute", db_name,
         "--config", str(config_path),
         "--remote" if remote else "--local",
-        f"--file={migration_path}",
+        f"--file={sql_path}",
     ])
     if rc != 0:
-        raise ManageError(f"Failed to apply migration to '{db_name}'")
-    ok("Migration applied")
+        raise ManageError(f"Failed to run {sql_path.name} on '{db_name}'")
+    ok("SQL applied")
+
+
+def d1_query(db_name, config_path, sql, remote=True):
+    """Run one read-only statement and return its result rows (list of dicts)."""
+    rc, out = run_capture([
+        "wrangler", "d1", "execute", db_name,
+        "--config", str(config_path),
+        "--remote" if remote else "--local",
+        "--json", "--command", sql,
+    ])
+    # wrangler prints progress lines around the JSON (and some contain "[").
+    m = re.search(r"^\[\s*\{", out, re.MULTILINE)
+    if rc != 0 or not m:
+        raise ManageError(f"Query failed on '{db_name}': {sql}\n{out.strip()}")
+    try:
+        data = json.loads(out[m.start():])
+        return data[0]["results"]
+    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        raise ManageError(f"Could not parse wrangler output for '{db_name}': {e}\n{out.strip()}")
+
+
+def migration_files():
+    """drizzle/NNNN_*.sql, in apply order."""
+    return sorted(p for p in MIGRATIONS_DIR.glob("*.sql") if re.match(r"^\d{4}_", p.name))
+
+
+def ensure_baselined(db_name, config_path, remote=True):
+    """Refuse to migrate a database that has tables but no recorded baseline.
+
+    The baseline migration is plain CREATE TABLEs (the old schema.sql used IF NOT
+    EXISTS, so re-running it was harmless; this is not). On a database that
+    predates migrations, wrangler would try to run it and fail with a raw
+    'already exists' error, so say what to do instead. A fresh database (no
+    events_tab) passes."""
+    files = migration_files()
+    if not files:
+        return
+    rows = d1_query(
+        db_name, config_path,
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('events_tab', 'd1_migrations')",
+        remote,
+    )
+    have = {r["name"] for r in rows}
+    if "events_tab" not in have:
+        return
+    if "d1_migrations" in have:
+        recorded = {r["name"] for r in d1_query(db_name, config_path, "SELECT name FROM d1_migrations", remote)}
+        if files[0].name in recorded:
+            return
+    flag = "" if remote else " --local"
+    raise ManageError(
+        f"'{db_name}' already has tables but {files[0].name} is not recorded as applied.\n"
+        f"  Adopt it first: python scripts/manage.py baseline <name>{flag}"
+    )
+
+
+def upgrade_legacy_config(config_path):
+    """Bring a deployments/<name>.toml written before the TypeScript move up to date.
+
+    Those configs say `main = "../src/index.js"` (the file no longer exists) and
+    have no `migrations_dir`, so deploy fails and `migrations apply` finds
+    nothing. The files are script-managed, so fixing the two lines in place is
+    safe and idempotent."""
+    text = config_path.read_text(encoding="utf-8")
+    new = text.replace('main = "../src/index.js"', 'main = "../src/index.ts"')
+    if "migrations_dir" not in new:
+        new = re.sub(
+            r'^(database_id\s*=\s*"[^"]*"[ \t]*\n)',
+            r'\1migrations_dir = "../drizzle"\n',
+            new, count=1, flags=re.MULTILINE,
+        )
+    if new != text:
+        config_path.write_text(new, encoding="utf-8")
+        ok(f"Updated {config_path.name} for the TypeScript worker (main, migrations_dir)")
+
+
+def expected_schema_objects(baseline_path):
+    """Tables and indexes the baseline migration creates: (tables, indexes)."""
+    sql = baseline_path.read_text(encoding="utf-8")
+    tables = set(re.findall(r"CREATE TABLE `?(\w+)`?", sql))
+    indexes = set(re.findall(r"CREATE (?:UNIQUE )?INDEX `?(\w+)`?", sql))
+    return tables, indexes
+
+
+# The old schema declared dimension uniqueness inline (`value TEXT UNIQUE`), which
+# SQLite backs with an auto-index. drizzle emits the same constraint as an explicit
+# named index. Same behaviour, so its absence is not drift.
+_EQUIVALENT_TO_INLINE_UNIQUE = re.compile(r"^dim_\w+_tab_value_unique$")
 
 
 # ---------------------------------------------------------------------------
@@ -552,15 +652,12 @@ def cmd_init(args):
     compat_date = read_compat_date()
     info(f"Using compatibility_date: {compat_date}")
 
-    # D1 setup
+    # D1 + R2 setup
     d1_id = d1_create_or_fetch(db_name)
-    apply_schema(db_name)
     r2_create_or_fetch(bucket_name)
 
-    # Build dashboard
-    build_dashboard()
-
-    # Write config
+    # Write config first: `wrangler d1 migrations apply` resolves the database
+    # and its migrations_dir from it.
     cfg = {
         "name": worker_name,
         "compat_date": compat_date,
@@ -572,6 +669,10 @@ def cmd_init(args):
         "bucket_name": bucket_name,
     }
     write_deployment_toml(worker_name, cfg)
+    apply_migrations(db_name, config_path)
+
+    # Build dashboard
+    build_dashboard()
 
     # Deploy
     info(f"Deploying {worker_name}...")
@@ -631,16 +732,19 @@ def _resolve_single_config(name):
     return config_path
 
 
-def _deploy_one(config_path, apply_schema_flag):
+def _deploy_one(config_path, migrate_first):
     """Deploy a single site from its config file. Returns True on success."""
+    upgrade_legacy_config(config_path)
     content = config_path.read_text(encoding="utf-8")
     db_name = read_toml_value(content, "database_name")
 
-    if apply_schema_flag and db_name:
+    if migrate_first and db_name:
         try:
-            apply_schema(db_name)
+            apply_migrations(db_name, config_path)
         except ManageError as e:
-            warn(f"Schema apply failed: {e}")
+            # Do not ship code that expects a schema the database does not have.
+            warn(f"Migration failed, not deploying {config_path.stem}: {e}")
+            return False
 
     info(f"Deploying {config_path.stem}...")
     rc, _ = run_streaming(["wrangler", "deploy", "--config", str(config_path)])
@@ -659,7 +763,7 @@ def cmd_deploy(args):
         build_dashboard()
         results = []
         for cfg_path in configs:
-            success = _deploy_one(cfg_path, args.schema)
+            success = _deploy_one(cfg_path, args.migrate)
             results.append((cfg_path.stem, success))
         # Summary table
         print()
@@ -675,7 +779,7 @@ def cmd_deploy(args):
     config_path = _resolve_single_config(args.name)
 
     build_dashboard()
-    success = _deploy_one(config_path, args.schema)
+    success = _deploy_one(config_path, args.migrate)
     if not success:
         raise ManageError("Deployment failed")
 
@@ -685,13 +789,11 @@ def cmd_deploy(args):
 
 
 # ---------------------------------------------------------------------------
-# Command: migrate
+# Commands: migrate / run-sql / baseline
 # ---------------------------------------------------------------------------
 
-def cmd_migrate(args):
-    migration_path = resolve_migration_path(args.file)
-    remote = not args.local
-
+def _resolve_targets(args):
+    """The deployment configs a command applies to: --all, or one by name."""
     if args.all:
         targets = list_deployment_files()
         if not targets:
@@ -701,41 +803,185 @@ def cmd_migrate(args):
             )
     else:
         targets = [_resolve_single_config(args.name)]
+    for p in targets:
+        upgrade_legacy_config(p)
+    return targets
 
+
+def _db_name_of(config_path):
+    return read_toml_value(config_path.read_text(encoding="utf-8"), "database_name")
+
+
+def _confirm_remote(args, remote, targets, what):
+    """List the targets and, for remote runs, ask before touching production."""
     where = "REMOTE" if remote else "LOCAL"
     print()
-    (warn if remote else info)(
-        f"About to run migration {bold(migration_path.name)} against {where} D1 for:"
-    )
+    (warn if remote else info)(f"About to {what} against {where} D1 for:")
     for p in targets:
-        db = read_toml_value(p.read_text(encoding="utf-8"), "database_name") or "(unknown)"
-        print(f"    {p.stem:<35} -> {db}")
+        print(f"    {p.stem:<35} -> {_db_name_of(p) or '(unknown)'}")
     print()
     # Only the remote path touches production data, so only it needs confirming.
     if remote and not args.yes and not _prompt_yn("This modifies production data. Continue?", default=False):
         raise ManageError("Aborted.")
 
-    results = []
-    for p in targets:
-        db_name = read_toml_value(p.read_text(encoding="utf-8"), "database_name")
-        if not db_name:
-            warn(f"{p.stem}: no database_name in config — skipping")
-            results.append((p.stem, False))
-            continue
-        try:
-            apply_migration(db_name, migration_path, p, remote=remote)
-            results.append((p.stem, True))
-        except ManageError as e:
-            warn(str(e))
-            results.append((p.stem, False))
 
+def _print_results(title, results):
     print()
-    print(bold("Migration results:"))
+    print(bold(title))
     for name, success in results:
         status = green("OK") if success else red("FAILED")
         print(f"  {status}  {name}")
     if any(not s for _, s in results):
         sys.exit(1)
+
+
+def cmd_migrate(args):
+    """Apply pending drizzle migrations (drizzle/*.sql) to each target."""
+    remote = not args.local
+    targets = _resolve_targets(args)
+    pending = ", ".join(f.name for f in migration_files()) or "(none found)"
+    _confirm_remote(args, remote, targets, f"apply migrations [{pending}] (only those not yet recorded)")
+
+    results = []
+    for p in targets:
+        db_name = _db_name_of(p)
+        if not db_name:
+            warn(f"{p.stem}: no database_name in config — skipping")
+            results.append((p.stem, False))
+            continue
+        try:
+            apply_migrations(db_name, p, remote=remote)
+            results.append((p.stem, True))
+        except ManageError as e:
+            warn(str(e))
+            results.append((p.stem, False))
+    _print_results("Migration results:", results)
+
+
+def cmd_run_sql(args):
+    """Run an ad-hoc SQL file (a one-off backfill, say). Not tracked anywhere."""
+    sql_path = resolve_sql_path(args.file)
+    remote = not args.local
+    targets = _resolve_targets(args)
+    _confirm_remote(args, remote, targets, f"run {bold(sql_path.name)}")
+
+    results = []
+    for p in targets:
+        db_name = _db_name_of(p)
+        if not db_name:
+            warn(f"{p.stem}: no database_name in config — skipping")
+            results.append((p.stem, False))
+            continue
+        try:
+            run_sql_file(db_name, sql_path, p, remote=remote)
+            results.append((p.stem, True))
+        except ManageError as e:
+            warn(str(e))
+            results.append((p.stem, False))
+    _print_results("Results:", results)
+
+
+# Wrangler's own bookkeeping table. Created here with exactly the DDL wrangler
+# uses, so a later `d1 migrations apply` carries on from it.
+_D1_MIGRATIONS_DDL = (
+    "CREATE TABLE IF NOT EXISTS d1_migrations("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "name TEXT UNIQUE, "
+    "applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)"
+)
+
+
+def _baseline_one(config_path, remote, dry_run):
+    """Adopt one EXISTING database into migration tracking.
+
+    The baseline migration (drizzle/0000_*.sql) describes the schema these
+    databases already have, so it must be RECORDED as applied, never run: running
+    it would at best do nothing and at worst create objects the deployment
+    deliberately lacks (idx_events_day_ref is a ~one-written-row-per-event
+    statement, opt-in via scripts/sql/add-referrer-index.sql).
+
+    Returns True when the database is now (or already was) tracked."""
+    db_name = _db_name_of(config_path)
+    if not db_name:
+        warn(f"{config_path.stem}: no database_name in config — skipping")
+        return False
+
+    files = migration_files()
+    if not files:
+        raise ManageError(f"No migrations found in {MIGRATIONS_DIR}")
+    baseline = files[0]
+    info(f"{config_path.stem}: checking '{db_name}' against {baseline.name}...")
+
+    objects = d1_query(
+        db_name, config_path,
+        "SELECT type, name FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*'",
+        remote,
+    )
+    have_tables = {o["name"] for o in objects if o["type"] == "table"}
+    have_indexes = {o["name"] for o in objects if o["type"] == "index"}
+    want_tables, want_indexes = expected_schema_objects(baseline)
+
+    missing_tables = sorted(want_tables - have_tables)
+    if missing_tables:
+        # Nothing to adopt: a database that lacks tables should simply be migrated.
+        warn(f"  missing tables: {', '.join(missing_tables)}")
+        warn("  this database is not at the baseline schema — use `migrate`, not `baseline`.")
+        return False
+
+    for idx in sorted(want_indexes - have_indexes):
+        if _EQUIVALENT_TO_INLINE_UNIQUE.match(idx):
+            continue
+        if idx == "idx_events_day_ref":
+            warn(f"  index {idx} is absent (opt-in; it stays absent). To add it later: "
+                 "python scripts/manage.py run-sql add-referrer-index")
+        else:
+            warn(f"  index {idx} is absent and will NOT be created by baselining")
+
+    columns = {c["name"] for c in d1_query(db_name, config_path, "PRAGMA table_info(events_tab)", remote)}
+    if "ref_path_id" in columns:
+        warn("  events_tab still has the retired ref_path_id column "
+             "(run scripts/sql/drop-referrer-path.sql if you want it gone)")
+
+    if "d1_migrations" in have_tables:
+        recorded = {r["name"] for r in d1_query(db_name, config_path, "SELECT name FROM d1_migrations", remote)}
+        if baseline.name in recorded:
+            ok(f"  already tracked ({baseline.name} recorded)")
+            return True
+
+    if dry_run:
+        info(f"  dry run: would record {baseline.name} as applied")
+        return True
+
+    target = "remote" if remote else "local"
+    rc, _ = run_capture([
+        "wrangler", "d1", "execute", db_name,
+        "--config", str(config_path),
+        "--remote" if remote else "--local",
+        "--command",
+        f"{_D1_MIGRATIONS_DDL}; INSERT OR IGNORE INTO d1_migrations (name) VALUES ('{baseline.name}')",
+    ])
+    if rc != 0:
+        raise ManageError(f"Failed to record {baseline.name} on '{db_name}' ({target})")
+    ok(f"  recorded {baseline.name} as applied")
+    return True
+
+
+def cmd_baseline(args):
+    remote = not args.local
+    targets = _resolve_targets(args)
+    if not args.dry_run:
+        _confirm_remote(args, remote, targets, "record the baseline migration as already applied")
+
+    results = []
+    for p in targets:
+        try:
+            results.append((p.stem, _baseline_one(p, remote, args.dry_run)))
+        except ManageError as e:
+            warn(str(e))
+            results.append((p.stem, False))
+    _print_results("Baseline results:", results)
+    print()
+    info("Next: `python scripts/manage.py migrate` should now report nothing to apply.")
 
 
 # ---------------------------------------------------------------------------
@@ -796,32 +1042,35 @@ def main():
         help="Deploy all sites in deployments/",
     )
     p_deploy.add_argument(
-        "--schema", action="store_true",
-        help="Also apply schema.sql before deploying",
+        "--migrate", "--schema", dest="migrate", action="store_true",
+        help="Apply pending database migrations before deploying (--schema is the old spelling)",
     )
 
+    def add_target_args(p, local_help):
+        p.add_argument(
+            "name", nargs="?", default=None,
+            help="Deployment name (stem of deployments/<name>.toml). Omit to pick interactively.",
+        )
+        p.add_argument("--all", action="store_true", help="Apply to all sites in deployments/")
+        p.add_argument("--local", action="store_true", help=local_help)
+        p.add_argument("-y", "--yes", action="store_true", help="Skip the confirmation prompt (remote only)")
+
     # migrate
-    p_migrate = sub.add_parser("migrate", help="Run a D1 SQL migration against a deployment (remote)")
-    p_migrate.add_argument(
-        "file",
-        help="Migration SQL file: a path, or a name resolved under migrations/",
+    p_migrate = sub.add_parser("migrate", help="Apply pending drizzle migrations (drizzle/*.sql) to a deployment")
+    add_target_args(p_migrate, "Run against the local D1 instead of remote (no confirmation needed)")
+
+    # baseline
+    p_baseline = sub.add_parser(
+        "baseline",
+        help="Adopt an existing database into migration tracking (records 0000 as applied, does not run it)",
     )
-    p_migrate.add_argument(
-        "name", nargs="?", default=None,
-        help="Deployment name (stem of deployments/<name>.toml). Omit to pick interactively.",
-    )
-    p_migrate.add_argument(
-        "--all", action="store_true",
-        help="Apply the migration to all sites in deployments/",
-    )
-    p_migrate.add_argument(
-        "--local", action="store_true",
-        help="Run against the local D1 instead of remote (no confirmation needed)",
-    )
-    p_migrate.add_argument(
-        "-y", "--yes", action="store_true",
-        help="Skip the confirmation prompt (remote only)",
-    )
+    add_target_args(p_baseline, "Run against the local D1 instead of remote")
+    p_baseline.add_argument("--dry-run", action="store_true", help="Only report drift; change nothing")
+
+    # run-sql
+    p_sql = sub.add_parser("run-sql", help="Run an ad-hoc SQL file (e.g. scripts/sql/backfill-rollups.sql)")
+    p_sql.add_argument("file", help="SQL file: a path, or a name resolved under scripts/sql/")
+    add_target_args(p_sql, "Run against the local D1 instead of remote (no confirmation needed)")
 
     # list
     sub.add_parser("list", help="List configured sites")
@@ -835,6 +1084,10 @@ def main():
             cmd_deploy(args)
         elif args.command == "migrate":
             cmd_migrate(args)
+        elif args.command == "baseline":
+            cmd_baseline(args)
+        elif args.command == "run-sql":
+            cmd_run_sql(args)
         elif args.command == "list":
             cmd_list(args)
     except ManageError as e:

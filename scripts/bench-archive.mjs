@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Rough CPU proxy for the nightly Parquet export (src/archive.js encodeEvents).
+// Rough CPU proxy for the nightly Parquet export (src/archive.ts encodeEvents).
 //
 // Encoding runs in the ArchiveWriter Durable Object, which gets 30s CPU per
 // invocation, so this is a sanity check rather than a hard budget the way it
@@ -10,7 +10,7 @@
 //
 //   node scripts/bench-archive.mjs [rows...]      (default: 7500 15000)
 
-import { encodeEvents, DIMENSION_NAMES } from "../src/archive.js";
+import { encodeEvents, DIMENSION_NAMES } from "../src/archive.ts";
 
 const CARDINALITY = {
   path: 2000,

@@ -25,7 +25,7 @@ export const DIMENSIONS: Dimension[] = [
   "device_model",
 ];
 
-// Archive schema v1 (src/archive.js). Every table here uses exactly this
+// Archive schema v1 (src/archive.ts). Every table here uses exactly this
 // column list, so server days, the live tail and imported files all union.
 const COLUMNS_DDL = [
   "day INTEGER",

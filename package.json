@@ -5,22 +5,30 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.12.0",
-  "main": "src/index.js",
+  "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "pnpm --dir dashboard-v2 build && wrangler deploy",
     "build:dashboard": "pnpm --dir dashboard-v2 build",
-    "schema": "wrangler d1 execute cloudflare_stats_db --remote --file=schema.sql",
-    "schema:local": "wrangler d1 execute cloudflare_stats_db --local --file=schema.sql"
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types --strict-vars=false --include-runtime=false",
+    "db:generate": "drizzle-kit generate && node scripts/check-migrations.mjs",
+    "db:check": "drizzle-kit check && node scripts/check-migrations.mjs",
+    "db:migrate:local": "wrangler d1 migrations apply cloudflare_stats_db --local",
+    "db:migrate": "wrangler d1 migrations apply cloudflare_stats_db --remote"
   },
   "dependencies": {
     "ag-grid-community": "^36.0.1",
+    "drizzle-orm": "^0.45.4",
     "echarts": "^6.1.0",
+    "hono": "^4.13.16",
     "hyparquet-writer": "^0.16.10",
     "preact": "^10.29.8",
     "ua-parser-js": "^2.0.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261102.1",
+    "drizzle-kit": "^0.31.11",
     "hyparquet": "^1.31.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",

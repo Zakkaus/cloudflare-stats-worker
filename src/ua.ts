@@ -21,7 +21,7 @@ const GENERIC_BOT_RE =
  * Returns true if the User-Agent belongs to a bot / crawler / non-human client.
  * Empty or missing UA is treated as a bot (real browsers always send one).
  */
-export function isBot(userAgent) {
+export function isBot(userAgent: unknown): boolean {
   if (!userAgent || typeof userAgent !== "string") {
     return true;
   }
@@ -41,7 +41,7 @@ export function isBot(userAgent) {
 
 const UNKNOWN = "Unknown";
 
-function clean(value) {
+function clean(value: unknown): string {
   if (value === undefined || value === null) return UNKNOWN;
   const s = `${value}`.trim();
   return s ? s : UNKNOWN;
@@ -50,7 +50,7 @@ function clean(value) {
 // Browser version is stored as major version only (e.g. "153" from
 // "153.0.8010.24") -- point releases don't change what web features are
 // supported and only bloat the dimension table / widen the dashboard.
-function majorVersion(value) {
+function majorVersion(value: string): string {
   if (value === UNKNOWN) return value;
   return value.split(".")[0] || UNKNOWN;
 }
@@ -59,7 +59,13 @@ function majorVersion(value) {
  * Parse a User-Agent into normalized OS / browser / device dimensions.
  * device.type is normalized to 'desktop' when ua-parser-js leaves it undefined.
  */
-export function parseUserAgent(userAgent) {
+export interface ParsedUserAgent {
+  os: { name: string; version: string };
+  browser: { name: string; version: string };
+  device: { type: string; vendor: string; model: string };
+}
+
+export function parseUserAgent(userAgent: string): ParsedUserAgent {
   const parser = new UAParser(userAgent || "");
   const os = parser.getOS();
   const browser = parser.getBrowser();
@@ -82,21 +88,21 @@ export function parseUserAgent(userAgent) {
  * - same-origin as the site   => { domain: '(internal)' }
  * - external                  => { domain: <hostname> }
  *
- * @param {string} referrer  raw document.referrer value from the beacon payload
- * @param {string} siteOrigin  the configured allowed site origin (for internal detection)
+ * `referrer` is the raw document.referrer from the beacon payload; `siteOrigin`
+ * the configured allowed site origin (for internal detection).
  */
-export function parseReferrer(referrer, siteOrigin) {
+export function parseReferrer(referrer: unknown, siteOrigin: string): { domain: string | null } {
   if (!referrer || typeof referrer !== "string") {
     return { domain: null };
   }
-  let url;
+  let url: URL;
   try {
     url = new URL(referrer);
   } catch {
     return { domain: null };
   }
 
-  let siteHost = null;
+  let siteHost: string | null = null;
   if (siteOrigin) {
     try {
       siteHost = new URL(siteOrigin).hostname;

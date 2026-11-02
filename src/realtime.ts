@@ -7,18 +7,30 @@
 // alongside the D1 pipeline rather than inside it.
 import { DurableObject } from "cloudflare:workers";
 
-export class RealtimeHub extends DurableObject {
-  constructor(ctx, env) {
-    super(ctx, env);
-    // At most one viewer at a time (enforced in fetch()).
-    this.socket = null;
-  }
+// What /api/send forwards for every accepted pageview (see routes/collect.ts).
+export interface RealtimeEvent {
+  path: string;
+  country: string;
+  browser: string;
+  browserVersion: string;
+  os: string;
+  osVersion: string;
+  deviceType: string;
+  deviceVendor: string;
+  deviceModel: string;
+  referrerDomain: string | null;
+  visitorId: number;
+}
+
+export class RealtimeHub extends DurableObject<Env> {
+  // At most one viewer at a time (enforced in fetch()).
+  private socket: WebSocket | null = null;
 
   // WebSocket upgrade from /api/realtime. Deliberately uses the plain accept()
   // API, not the hibernation API: hibernation would evict this DO's in-memory
   // `this.socket` between events, which defeats a relay that must stay warm
   // for as long as a viewer is connected.
-  async fetch(request) {
+  async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("Expected WebSocket upgrade", { status: 426 });
     }
@@ -44,7 +56,7 @@ export class RealtimeHub extends DurableObject {
   // event that already passed bot/rate-limit checks. No-op when nobody is
   // watching -- this is what makes "only count while the dashboard is open"
   // true: a dropped event is never observed by anyone, anywhere.
-  async ingest(event) {
+  async ingest(event: RealtimeEvent): Promise<void> {
     if (!this.socket) return;
     try {
       this.socket.send(JSON.stringify({ type: "pageview", ...event, ts: Date.now() }));

@@ -1,6 +1,6 @@
 -- OPTIONAL. Adds a composite index on (day, ref_domain_id).
 --
---   wrangler d1 execute <db> --remote --file=migrations/add-referrer-index.sql
+--   wrangler d1 execute <db> --remote --file=scripts/sql/add-referrer-index.sql
 --
 -- ## CHECK THE WRITE BUDGET FIRST -- this one can drop pageviews
 --

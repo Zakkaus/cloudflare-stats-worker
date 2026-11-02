@@ -17,7 +17,7 @@ export interface MomFilter {
 }
 
 // The label the API and the tables use for a NULL dimension. Filtering on it
-// means "IS NULL", mirroring nullLabelFor() in src/index.js.
+// means "IS NULL", mirroring nullLabelFor() in src/dimensions.ts.
 export function nullLabel(dim: Dimension): string {
   return dim.startsWith("referrer") ? "(direct)" : "(unknown)";
 }

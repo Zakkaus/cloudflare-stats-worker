@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 const HOST = process.env.STATS_HOST || "http://127.0.0.1:8787";
 const DUMP = process.argv[2] || "prod_backup.sql";
 
-// events_tab column order, mirroring schema.sql.
+// events_tab column order, mirroring src/db/schema.ts.
 const COLUMNS = [
   "id", "day", "visitor_id", "path_id", "ref_domain_id", "country_id",
   "browser_id", "browser_ver_id", "os_id", "os_ver_id",

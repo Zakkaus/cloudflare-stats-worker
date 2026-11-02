@@ -7,7 +7,7 @@ import type {
   TupleQueryResponse,
 } from "./types";
 
-// Mirrors the worker's Cache-Control policy (src/index.js cacheHeaders): a date
+// Mirrors the worker's Cache-Control policy (src/http.ts cacheHeaders): a date
 // range that has already closed can never change, so it is held far longer than
 // one that includes today.
 const CACHE_TTL_LIVE_MS = 60_000;

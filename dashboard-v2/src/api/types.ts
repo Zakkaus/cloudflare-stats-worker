@@ -1,4 +1,4 @@
-// Contract shared with the worker query API (src/index.js).
+// Contract shared with the worker query API (src/routes/).
 
 export type Metric = "visitors" | "pageviews";
 

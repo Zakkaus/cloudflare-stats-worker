@@ -16,7 +16,7 @@
 // Exits non-zero on any mismatch.
 
 import { parquetReadObjects } from "hyparquet";
-import { DIMENSION_NAMES } from "../src/archive.js";
+import { DIMENSION_NAMES } from "../src/archive.ts";
 
 const HOST = process.env.STATS_HOST || "http://127.0.0.1:8787";
 const NULL_LABEL = (dim) => (dim.startsWith("referrer") ? "(direct)" : "(unknown)");

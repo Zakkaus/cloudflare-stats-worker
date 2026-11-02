@@ -41,7 +41,7 @@ Prerequisites: Python 3.8+, Node 18+, **pnpm**, a Cloudflare account, `wrangler`
 
 ```bash
 git clone <this-repo> && cd cloudflare-stats-worker
-python scripts/manage.py init    # interactive: creates D1, applies schema, builds dashboard, deploys
+python scripts/manage.py init    # interactive: creates D1, applies migrations, builds dashboard, deploys
 ```
 
 The script prompts for the worker name, allowed website origin, rate limit, and timezone, then writes `deployments/<name>.toml` and deploys.
@@ -52,20 +52,25 @@ The script prompts for the worker name, allowed website origin, rate limit, and 
 python scripts/manage.py init                    # First-time setup for a new site
 python scripts/manage.py deploy [name]           # Rebuild dashboard and deploy an existing site
 python scripts/manage.py deploy --all            # Deploy all sites
+python scripts/manage.py deploy [name] --migrate # Apply pending DB migrations, then deploy
 python scripts/manage.py list                    # List configured sites
-python scripts/manage.py migrate <file> [name]   # Run a D1 SQL migration (remote)
-python scripts/manage.py migrate <file> --local  # Run against the local D1
-python scripts/manage.py migrate <file> --all    # Run a migration on all sites
+python scripts/manage.py migrate [name]          # Apply pending drizzle migrations (remote)
+python scripts/manage.py migrate --local         # ... against the local D1
+python scripts/manage.py migrate --all           # ... on all sites
+python scripts/manage.py baseline [name|--all]   # Adopt an EXISTING database into migration tracking
+python scripts/manage.py run-sql <file> [name]   # Run an ad-hoc SQL file from scripts/sql/ (one-off backfills)
 ```
+
+The schema lives in `src/db/schema.ts`; `pnpm db:generate` writes SQL migrations to `drizzle/`, and `migrate` applies them per site (tracked in each database's `d1_migrations` table). Databases created before migrations existed need `baseline` once — see `CLAUDE.md` › "Database schema & migrations".
 
 Each site's config lives in `deployments/<name>.toml` (managed by the script; do not edit manually).
 
 ### Manual setup
 
 ```bash
-pnpm install                              # root deps (ua-parser-js, wrangler)
+pnpm install                              # root deps (hono, drizzle-orm, ua-parser-js, wrangler)
 wrangler d1 create cloudflare_stats_db    # -> put database_id in wrangler.toml
-wrangler d1 execute cloudflare_stats_db --remote --file=schema.sql
+pnpm db:migrate                           # apply drizzle/*.sql to the remote D1
 
 pnpm --dir dashboard-v2 install
 pnpm --dir dashboard-v2 build             # -> dashboard-v2/dist
@@ -117,7 +122,7 @@ English-only preact SPA (AG Grid + Apache ECharts). Metric switcher (Visitors / 
 ## Local development
 
 ```bash
-wrangler d1 execute cloudflare_stats_db --local --file=schema.sql
+pnpm db:migrate:local
 pnpm --dir dashboard-v2 build     # or: pnpm --dir dashboard-v2 dev  (proxies /api to :8787)
 wrangler dev                      # http://127.0.0.1:8787
 node check.js                     # quick-check (STATS_HOST=... to target remote)

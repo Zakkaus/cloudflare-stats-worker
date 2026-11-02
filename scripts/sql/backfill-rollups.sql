@@ -1,5 +1,7 @@
--- One-time backfill of the read-path rollups. Run AFTER add-rollup-tables.sql:
---   wrangler d1 execute cloudflare_stats_db --remote --file=migrations/backfill-rollups.sql
+-- One-time backfill of the read-path rollups. Needs the rollup tables, i.e. any
+-- database that has had its migrations applied (see drizzle/):
+--   python scripts/manage.py run-sql backfill-rollups [deployment]
+--   wrangler d1 execute cloudflare_stats_db --remote --file=scripts/sql/backfill-rollups.sql
 --
 -- ## COST -- read this before running
 --
