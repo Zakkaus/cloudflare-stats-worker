@@ -92,8 +92,10 @@ body {
 .row.clickable:hover .key { color: var(--accent); }
 .row .bar { position: absolute; inset: 0 auto 0 0; background: var(--accent-weak); z-index: 0; border-radius: 6px; }
 .row .key, .row .val, .row .actions { position: relative; z-index: 1; }
-.row .key { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 65%; }
-.row .val { color: var(--muted); font-variant-numeric: tabular-nums; }
+.row .key { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 65%; margin-right: auto; }
+.row .val { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+/* Compare mode: the key pushes both numbers right; fixed-width delta keeps the value column's right edge aligned. */
+.row .val.mom-delta { min-width: 64px; margin-left: 12px; }
 .row .actions { display: none; gap: 4px; margin-left: 8px; }
 .row:hover .actions { display: inline-flex; }
 .row:hover .val { display: none; }
