@@ -81,8 +81,8 @@ export const dimTables: Record<DimensionName, typeof dimPathTab> = {
 // ---------------------------------------------------------------------------
 // Keep indexes deliberately few -- and the reason is WRITES, not storage. D1
 // bills one written row per index that covers an inserted column, so every
-// index here adds a row to the cost of every single pageview (and another to the
-// delete that eventually prunes it). Only `day` is left: it serves the live
+// index here adds a row to the cost of every single pageview (a delete, by
+// contrast, bills one row however many indexes there are). Only `day` is left: it serves the live
 // "today" reads, the per-day archive export and the per-day prune.
 //
 // There used to be (day, country), (day, path) and (day, ref_domain) composites

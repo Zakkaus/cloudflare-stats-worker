@@ -85,8 +85,9 @@ async function main(d1) {
     Number((await first("SELECT COALESCE(SUM(pv),0) AS n FROM events_monthly_tab WHERE dimension = 'total'")).n);
   assert.equal(await allTimePv(), total, "all-time PV before pruning");
 
-  // A tiny budget: 2 written rows per event (row + idx_events_day) plus rollup rows.
-  const budget = 100;
+  // A tiny budget: a delete bills 1 written row per row removed (indexes are free),
+  // so this is ~50 events a run plus rollup rows and the one-off monthly aggregate.
+  const budget = 50;
   let runs = 0;
   for (; runs < 100; runs += 1) {
     const left = Number((await first("SELECT COUNT(*) AS n FROM events_tab WHERE day < ?", cutoff)).n);

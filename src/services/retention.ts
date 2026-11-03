@@ -1,12 +1,13 @@
 // Retention: raw events older than 6 whole months are folded into
 // events_monthly_tab and deleted, together with their rollup rows.
 //
-// The delete is spread over nights. A D1 delete bills a written row per index
-// entry just like an insert does, so removing a whole month at once (127K rows
-// x 4 on the busiest deployment) is several times the account's 100K/day write
-// budget -- and an exhausted budget makes ingest drop real pageviews on every
-// site sharing the account. Instead each run deletes oldest day first until a
-// write budget is spent, and carries on the next night.
+// The delete is spread over nights. A D1 delete bills one written row per row
+// removed (measured 2026-11-03: indexes are free on delete, unlike on insert), so
+// removing a whole month at once (127K rows on the busiest deployment) is still
+// more than the account's 100K/day write budget -- and an exhausted budget makes
+// ingest drop real pageviews on every site sharing the account. Instead each run
+// deletes oldest day first until a write budget is spent, and carries on the
+// next night.
 import { DIMENSIONS, nullLabelFor } from "../dimensions.ts";
 import type { Db } from "../db/client.ts";
 import { firstDayOfNextMonth } from "../lib/days.ts";
@@ -14,12 +15,13 @@ import { HIERARCHIES } from "./rollup.ts";
 import { archiveCovers } from "./archive-export.ts";
 import { META_MIN_DAY, META_PRUNE_AGG_MONTH, invalidateMetaCache, raiseMetaMax, readMeta } from "./meta.ts";
 
-// Written rows one nightly prune may spend (events + index entries + rollup rows
-// + the monthly aggregate), across the whole run. Ingest is the other consumer of
-// the account-wide 100K/day: ~4 writes per pageview, ~13K pageviews on the
-// busiest day seen so far. Steady state needs only ~ingest per night, so this
-// leaves a backlog (a month is ~125K rows) draining over about a fortnight
-// without ever being the thing that exhausts the day.
+// Written rows one nightly prune may spend (deleted events + rollup rows + the
+// monthly aggregate), across the whole run. Ingest is the other consumer of the
+// account-wide 100K/day: ~4 writes per pageview (2 once migration 0001 is
+// applied), ~13K pageviews on the busiest day seen so far. Steady state needs
+// only ~ingest per night, so this leaves a backlog (a month is ~125K rows)
+// draining over about four or five nights without ever being the thing that
+// exhausts the day.
 export const PRUNE_WRITES_PER_RUN = 30000;
 
 // First day that is still hot: days strictly before it are expired.
@@ -33,37 +35,22 @@ export function retentionCutoff(today: number): number {
   return (cy * 100 + cm) * 100;
 }
 
-// Tables the prune writes to, and what one inserted or deleted row costs if the
-// schema cannot be read (the pre-0001 events_tab; events_monthly_tab's rowid +
-// composite primary key + two indexes).
-const COST_FALLBACK = {
-  events_tab: 5,
-  events_monthly_tab: 4,
-  site_daily_tab: 1,
-  dim_daily_tab: 1,
-  hier_daily_tab: 1,
-} as const;
-type WriteCosts = Record<keyof typeof COST_FALLBACK, number>;
+// Written rows to insert one events_monthly_tab row if the schema cannot be read:
+// the rowid, its composite primary key's implicit index and two indexes.
+const MONTHLY_INSERT_COST_FALLBACK = 4;
 
-// Written rows per inserted or deleted row, by table: the row plus one per index.
+// Written rows per inserted events_monthly_tab row: the row plus one per index.
 // That includes the implicit index of a rowid table with a composite primary key
-// (sqlite_autoindex_*); a WITHOUT ROWID table has none, and an INTEGER PRIMARY
-// KEY is the rowid itself. Read from the schema, so events_tab's cost drops when
-// the composite indexes go.
-async function writeCosts(d1: D1Database): Promise<WriteCosts> {
-  const tables = Object.keys(COST_FALLBACK) as (keyof WriteCosts)[];
+// (sqlite_autoindex_*). Only inserts pay per index; a delete is one written row
+// whatever the table's indexes, so deletes below are counted at 1.
+async function monthlyInsertCost(d1: D1Database): Promise<number> {
   try {
-    const { results } = await d1
-      .prepare(
-        `SELECT tbl_name AS t, COUNT(*) AS n FROM sqlite_master
-         WHERE type = 'index' AND tbl_name IN (${tables.map(() => "?").join(", ")}) GROUP BY tbl_name`
-      )
-      .bind(...tables)
-      .all<{ t: string; n: number }>();
-    const indexes = new Map(results.map((r) => [r.t, Number(r.n)]));
-    return Object.fromEntries(tables.map((t) => [t, 1 + (indexes.get(t) ?? 0)])) as WriteCosts;
+    const row = await d1
+      .prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'index' AND tbl_name = 'events_monthly_tab'")
+      .first<{ n: number }>();
+    return 1 + Number(row?.n ?? MONTHLY_INSERT_COST_FALLBACK - 1);
   } catch {
-    return { ...COST_FALLBACK };
+    return MONTHLY_INSERT_COST_FALLBACK;
   }
 }
 
@@ -76,7 +63,7 @@ const sumChanges = (results: D1Result[]): number => results.reduce((s, r) => s +
 export async function pruneExpiredDays(env: Env, db: Db, today: number, budget = PRUNE_WRITES_PER_RUN): Promise<void> {
   const d1 = db.$client;
   const cutoffDay = retentionCutoff(today);
-  const cost = await writeCosts(d1);
+  const insertCost = await monthlyInsertCost(d1);
   let spent = 0;
   let days = 0;
   let events = 0;
@@ -113,7 +100,7 @@ export async function pruneExpiredDays(env: Env, db: Db, today: number, budget =
         console.warn(`[worker] not pruning month ${month}: Parquet archive does not cover all of it yet`);
         break;
       }
-      spent += await writeMonthAggregate(db, month, cost);
+      spent += await writeMonthAggregate(db, month, insertCost);
       invalidateMetaCache();
     }
 
@@ -124,11 +111,9 @@ export async function pruneExpiredDays(env: Env, db: Db, today: number, budget =
       ...dims.map((dimension) => d1.prepare("DELETE FROM dim_daily_tab WHERE dimension = ? AND day = ?").bind(dimension, day)),
       ...Object.keys(HIERARCHIES).map((hier) => d1.prepare("DELETE FROM hier_daily_tab WHERE hier = ? AND day = ?").bind(hier, day)),
     ]);
-    spent +=
-      sumChanges(rollupResults.slice(0, dims.length)) * cost.dim_daily_tab +
-      sumChanges(rollupResults.slice(dims.length)) * cost.hier_daily_tab;
+    spent += sumChanges(rollupResults);
 
-    const room = Math.floor((budget - spent) / cost.events_tab);
+    const room = budget - spent;
     if (room < 1) break;
     const del = await d1
       .prepare("DELETE FROM events_tab WHERE id IN (SELECT id FROM events_tab WHERE day = ? LIMIT ?)")
@@ -142,7 +127,7 @@ export async function pruneExpiredDays(env: Env, db: Db, today: number, budget =
       console.warn(`[worker] prune made no progress on day ${day}; stopping`);
       break;
     }
-    spent += deleted * cost.events_tab;
+    spent += deleted;
     events += deleted;
     days += 1;
     // A full batch may or may not have emptied the day; the next iteration's
@@ -153,7 +138,7 @@ export async function pruneExpiredDays(env: Env, db: Db, today: number, budget =
 }
 
 // Returns the written rows it spent.
-async function writeMonthAggregate(db: Db, month: number, cost: WriteCosts): Promise<number> {
+async function writeMonthAggregate(db: Db, month: number, insertCost: number): Promise<number> {
   const d1 = db.$client;
   const start = month * 100 + 1;
   const end = month * 100 + 31;
@@ -195,10 +180,7 @@ async function writeMonthAggregate(db: Db, month: number, cost: WriteCosts): Pro
   const results = await d1.batch(statements);
   console.log(`[worker] aggregated month ${month}`);
   // Each aggregate row is a rowid insert plus an entry in every index on the
-  // table, not one written row; the two meta_tab bounds are one each.
-  return (
-    sumChanges(results.slice(0, aggregateCount)) * cost.events_monthly_tab +
-    changes(results[aggregateCount]) * cost.site_daily_tab +
-    sumChanges(results.slice(aggregateCount + 1))
-  );
+  // table, not one written row; the site_daily_tab delete and the two meta_tab
+  // bounds are one each.
+  return sumChanges(results.slice(0, aggregateCount)) * insertCost + sumChanges(results.slice(aggregateCount));
 }
